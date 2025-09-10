@@ -1,0 +1,90 @@
+name: Coverage Report
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Needed for SonarCloud
+        
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        
+    - name: Cache Maven packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+        
+    - name: Cache SonarCloud packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.sonar/cache
+        key: ${{ runner.os }}-sonar
+        restore-keys: ${{ runner.os }}-sonar
+        
+    - name: Run tests and collect coverage
+      run: mvn clean test jacoco:report
+      
+    - name: SonarCloud Scan
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      run: |
+        mvn sonar:sonar \
+          -Dsonar.projectKey=cluster-controller \
+          -Dsonar.organization=your-org \
+          -Dsonar.host.url=https://sonarcloud.io \
+          -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+      continue-on-error: true
+      
+    - name: Upload to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./target/site/jacoco/jacoco.xml
+        flags: unittests
+        name: cluster-controller-coverage
+        fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
+        
+    - name: Coverage Summary Report
+      run: |
+        echo "## 📊 Coverage Report" >> $GITHUB_STEP_SUMMARY
+        echo "| Metric | Coverage |" >> $GITHUB_STEP_SUMMARY
+        echo "|--------|----------|" >> $GITHUB_STEP_SUMMARY
+        
+        # Parse coverage from jacoco.csv
+        if [ -f "target/site/jacoco/jacoco.csv" ]; then
+          INSTRUCTION_COVERED=$(tail -n 1 target/site/jacoco/jacoco.csv | cut -d',' -f4)
+          INSTRUCTION_MISSED=$(tail -n 1 target/site/jacoco/jacoco.csv | cut -d',' -f5)
+          BRANCH_COVERED=$(tail -n 1 target/site/jacoco/jacoco.csv | cut -d',' -f6)
+          BRANCH_MISSED=$(tail -n 1 target/site/jacoco/jacoco.csv | cut -d',' -f7)
+          
+          TOTAL_INSTRUCTIONS=$((INSTRUCTION_COVERED + INSTRUCTION_MISSED))
+          TOTAL_BRANCHES=$((BRANCH_COVERED + BRANCH_MISSED))
+          
+          if [ $TOTAL_INSTRUCTIONS -gt 0 ]; then
+            INSTRUCTION_PERCENTAGE=$((INSTRUCTION_COVERED * 100 / TOTAL_INSTRUCTIONS))
+            echo "| Instructions | ${INSTRUCTION_PERCENTAGE}% (${INSTRUCTION_COVERED}/${TOTAL_INSTRUCTIONS}) |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ $TOTAL_BRANCHES -gt 0 ]; then
+            BRANCH_PERCENTAGE=$((BRANCH_COVERED * 100 / TOTAL_BRANCHES))
+            echo "| Branches | ${BRANCH_PERCENTAGE}% (${BRANCH_COVERED}/${TOTAL_BRANCHES}) |" >> $GITHUB_STEP_SUMMARY
+          fi
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📈 [View Detailed Coverage Report](https://codecov.io/gh/${{ github.repository }})" >> $GITHUB_STEP_SUMMARY
