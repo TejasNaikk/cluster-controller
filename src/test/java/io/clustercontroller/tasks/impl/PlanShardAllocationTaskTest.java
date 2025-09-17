@@ -29,7 +29,7 @@ class PlanShardAllocationTaskTest {
     }
     
     @Test
-    void testPlanShardAllocationTaskExecution() {
+    void testPlanShardAllocationTaskExecution() throws Exception {
         String taskName = "plan-shard-allocation-task";
         String input = "";
         PlanShardAllocationTask task = new PlanShardAllocationTask(taskName, 1, input, TASK_SCHEDULE_ONCE);
@@ -56,7 +56,7 @@ class PlanShardAllocationTaskTest {
     }
     
     @Test
-    void testPlanShardAllocationTaskExecutionFailure() {
+    void testPlanShardAllocationTaskExecutionFailure() throws Exception {
         String taskName = "plan-shard-allocation-task";
         String input = "";
         PlanShardAllocationTask task = new PlanShardAllocationTask(taskName, 1, input, TASK_SCHEDULE_ONCE);

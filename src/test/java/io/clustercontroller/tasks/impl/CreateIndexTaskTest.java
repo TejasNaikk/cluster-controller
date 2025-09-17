@@ -29,7 +29,7 @@ class CreateIndexTaskTest {
     }
     
     @Test
-    void testCreateIndexTaskExecution() {
+    void testCreateIndexTaskExecution() throws Exception {
         String taskName = "create-index-task";
         String input = "index-config";
         CreateIndexTask task = new CreateIndexTask(taskName, 1, input, TASK_SCHEDULE_ONCE);
@@ -56,7 +56,7 @@ class CreateIndexTaskTest {
     }
     
     @Test
-    void testCreateIndexTaskExecutionFailure() {
+    void testCreateIndexTaskExecutionFailure() throws Exception {
         String taskName = "create-index-task";
         String input = "invalid-config";
         CreateIndexTask task = new CreateIndexTask(taskName, 1, input, TASK_SCHEDULE_ONCE);

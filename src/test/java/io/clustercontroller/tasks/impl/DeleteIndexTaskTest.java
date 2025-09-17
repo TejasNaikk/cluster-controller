@@ -29,7 +29,7 @@ class DeleteIndexTaskTest {
     }
     
     @Test
-    void testDeleteIndexTaskExecution() {
+    void testDeleteIndexTaskExecution() throws Exception {
         String taskName = "delete-index-task";
         String input = "index-config";
         DeleteIndexTask task = new DeleteIndexTask(taskName, 1, input, TASK_SCHEDULE_ONCE);
@@ -56,7 +56,7 @@ class DeleteIndexTaskTest {
     }
     
     @Test
-    void testDeleteIndexTaskExecutionFailure() {
+    void testDeleteIndexTaskExecutionFailure() throws Exception {
         String taskName = "delete-index-task";
         String input = "invalid-config";
         DeleteIndexTask task = new DeleteIndexTask(taskName, 1, input, TASK_SCHEDULE_ONCE);
