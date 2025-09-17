@@ -40,7 +40,6 @@ class IndexManagerTest {
         String createIndexRequestJson = """
             {
                 "index_name": "test-index",
-                "active": false,
                 "mappings": "{\\"properties\\": {\\"field1\\": {\\"type\\": \\"text\\"}}}",
                 "settings": "{\\"number_of_shards\\": 1}"
             }
@@ -60,7 +59,6 @@ class IndexManagerTest {
 
         Index capturedIndex = indexCaptor.getValue();
         assertThat(capturedIndex.getIndexName()).isEqualTo(indexName);
-        assertThat(capturedIndex.isActive()).isFalse();
         assertThat(capturedIndex.getShardReplicaCount()).isNotNull();
         assertThat(capturedIndex.getAllocationPlan()).isNotNull();
         assertThat(capturedIndex.getCreatedAt()).isNotNull();
@@ -72,40 +70,13 @@ class IndexManagerTest {
         verify(metadataStore).setIndexSettings("test-index", "{\"number_of_shards\": 1}");
     }
 
-    @Test
-    void testCreateIndex_WithActiveFlag() throws Exception {
-        // Given
-        String createIndexRequestJson = """
-            {
-                "index_name": "active-index",
-                "active": true
-            }
-            """;
-        List<SearchUnit> availableSearchUnits = createMockSearchUnits();
-
-        when(metadataStore.getIndexConfig("active-index")).thenReturn(Optional.empty());
-        when(metadataStore.getAllSearchUnits()).thenReturn(availableSearchUnits);
-        when(metadataStore.createIndexConfig(any(Index.class))).thenReturn("doc-id-456");
-
-        // When
-        indexManager.createIndex(createIndexRequestJson);
-
-        // Then
-        ArgumentCaptor<Index> indexCaptor = ArgumentCaptor.forClass(Index.class);
-        verify(metadataStore).createIndexConfig(indexCaptor.capture());
-
-        Index capturedIndex = indexCaptor.getValue();
-        assertThat(capturedIndex.getIndexName()).isEqualTo("active-index");
-        assertThat(capturedIndex.isActive()).isTrue();
-    }
 
     @Test
     void testCreateIndex_NoAvailableSearchUnits() throws Exception {
         // Given
         String createIndexRequestJson = """
             {
-                "index_name": "test-index",
-                "active": false
+                "index_name": "test-index"
             }
             """;
         List<SearchUnit> emptySearchUnits = new ArrayList<>();
@@ -139,8 +110,7 @@ class IndexManagerTest {
         // Given
         String createIndexRequestJson = """
             {
-                "index_name": "existing-index",
-                "active": false
+                "index_name": "existing-index"
             }
             """;
 
@@ -161,8 +131,7 @@ class IndexManagerTest {
         // Given
         String indexConfig = """
             {
-                "index_name": "delete-me-index",
-                "active": true
+                "index_name": "delete-me-index"
             }
             """;
 
@@ -197,7 +166,6 @@ class IndexManagerTest {
 
         Index capturedIndex = indexCaptor.getValue();
         assertThat(capturedIndex.getIndexName()).isEqualTo("minimal-index");
-        assertThat(capturedIndex.isActive()).isFalse(); // Default value
     }
 
     private List<SearchUnit> createMockSearchUnits() {
@@ -230,8 +198,7 @@ class IndexManagerTest {
         String indexName = "minimal-index";
         String createIndexRequestJson = """
             {
-                "index_name": "minimal-index",
-                "active": false
+                "index_name": "minimal-index"
             }
             """;
         List<SearchUnit> availableSearchUnits = createMockSearchUnits();
@@ -260,7 +227,6 @@ class IndexManagerTest {
         String createIndexRequestJson = """
             {
                 "index_name": "mappings-only-index",
-                "active": false,
                 "mappings": "{\\"properties\\": {\\"title\\": {\\"type\\": \\"text\\"}}}"
             }
             """;
@@ -287,7 +253,6 @@ class IndexManagerTest {
         String createIndexRequestJson = """
             {
                 "index_name": "settings-only-index",
-                "active": false,
                 "settings": "{\\"number_of_replicas\\": 2}"
             }
             """;

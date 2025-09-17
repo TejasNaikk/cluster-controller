@@ -72,12 +72,11 @@ public class IndexManager {
         newIndex.setIndexName(request.getIndexName());
         newIndex.setShardReplicaCount(shardReplicaCount);
         newIndex.setAllocationPlan(allocationPlan);
-        newIndex.setActive(request.isActive());
         
         // Store the index configuration
         String documentId = metadataStore.createIndexConfig(newIndex);
-        log.info("CreateIndex - Successfully created index configuration for '{}' with document ID: {}, active: {}", 
-            newIndex.getIndexName(), documentId, newIndex.isActive());
+        log.info("CreateIndex - Successfully created index configuration for '{}' with document ID: {}", 
+            newIndex.getIndexName(), documentId);
         
         // Store mappings if provided
         if (request.getMappings() != null && !request.getMappings().trim().isEmpty()) {
@@ -115,10 +114,7 @@ public class IndexManager {
     private static class CreateIndexRequest {
         @JsonProperty("index_name")
         private String indexName;
-        
-        @JsonProperty("active")
-        private boolean active = false; // Default to false
-        
+
         @JsonProperty("mappings")
         private String mappings; // Optional mappings JSON
         
