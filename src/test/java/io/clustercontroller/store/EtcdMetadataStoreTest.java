@@ -357,15 +357,16 @@ public class EtcdMetadataStoreTest {
         EtcdMetadataStore store = newStore();
 
         GetResponse resp = mockGetResponse(Arrays.asList(
-                mockKv("{\"settings\":{\"refresh_interval\":\"1s\"}}"),
-                mockKv("{\"settings\":{\"number_of_shards\":3}}")
+                mockKv("{\"index_name\":\"test-index-1\",\"shard_replica_count\":[1],\"active\":true}"),
+                mockKv("{\"index_name\":\"test-index-2\",\"shard_replica_count\":[2],\"active\":false}")
         ));
         when(mockKv.get(any(ByteSequence.class), any(GetOption.class)))
                 .thenReturn(CompletableFuture.completedFuture(resp));
 
-        List<String> configs = store.getAllIndexConfigs();
+        List<Index> configs = store.getAllIndexConfigs();
         assertThat(configs).hasSize(2);
-        assertThat(configs.get(0)).contains("settings");
+        assertThat(configs.get(0).getIndexName()).isEqualTo("test-index-1");
+        assertThat(configs.get(1).getIndexName()).isEqualTo("test-index-2");
     }
 
     @Test

@@ -36,6 +36,9 @@ public class Index {
     @JsonProperty("created_at")
     private String createdAt = java.time.OffsetDateTime.now().toString(); // ISO timestamp for proper ordering
     
+    @JsonProperty("active")
+    private boolean active = true;
+    
     public Index(String indexName, List<Integer> shardReplicaCount) {
         this.indexName = indexName;
         this.shardReplicaCount = shardReplicaCount != null ? shardReplicaCount : new ArrayList<>();
