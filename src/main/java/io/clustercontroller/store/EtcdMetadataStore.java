@@ -1,5 +1,7 @@
 package io.clustercontroller.store;
 
+import io.clustercontroller.models.Index;
+import io.clustercontroller.models.ShardAllocation;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -20,6 +22,7 @@ import io.grpc.stub.StreamObserver;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Paths;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -386,6 +389,24 @@ public class EtcdMetadataStore implements MetadataStore {
     }
     
     @Override
+    public void updateSearchUnitGoalState(String unitName, SearchUnitGoalState goalState) throws Exception {
+        log.debug("Updating search unit goal state for unit: {}", unitName);
+        
+        try {
+            String key = pathResolver.getSearchUnitGoalStatePath(unitName);
+            String json = objectMapper.writeValueAsString(goalState);
+            
+            executeEtcdPut(key, json);
+            
+            log.debug("Successfully updated goal state for search unit: {}", unitName);
+            
+        } catch (Exception e) {
+            log.error("Failed to update goal state for search unit {}: {}", unitName, e.getMessage(), e);
+            throw new Exception("Failed to update search unit goal state in etcd", e);
+        }
+    }
+    
+    @Override
     public Optional<SearchUnitActualState> getSearchUnitActualState(String unitName) throws Exception {
         String key = pathResolver.getSearchUnitActualStatePath(unitName);
         CompletableFuture<GetResponse> getFuture = kvClient.get(ByteSequence.from(key, UTF_8));
@@ -405,21 +426,26 @@ public class EtcdMetadataStore implements MetadataStore {
     // =================================================================
     
     @Override
-    public List<String> getAllIndexConfigs() throws Exception {
+    public List<Index> getAllIndexConfigs() throws Exception {
         log.debug("Getting all index configs from etcd");
         
         try {
             String indicesPrefix = pathResolver.getIndicesPrefix();
             GetResponse response = executeEtcdPrefixQuery(indicesPrefix);
             
-            List<String> indexConfigs = new ArrayList<>();
+            List<Index> indices = new ArrayList<>();
             for (var kv : response.getKvs()) {
-                String indexConfig = kv.getValue().toString(StandardCharsets.UTF_8);
-                indexConfigs.add(indexConfig);
+                String indexConfigJson = kv.getValue().toString(StandardCharsets.UTF_8);
+                try {
+                    Index index = objectMapper.readValue(indexConfigJson, Index.class);
+                    indices.add(index);
+                } catch (Exception e) {
+                    log.warn("Failed to parse index config JSON: {}", e.getMessage());
+                }
             }
             
-            log.debug("Retrieved {} index configs from etcd", indexConfigs.size());
-            return indexConfigs;
+            log.debug("Retrieved {} index configs from etcd", indices.size());
+            return indices;
             
         } catch (Exception e) {
             log.error("Failed to get all index configs from etcd: {}", e.getMessage(), e);
@@ -440,10 +466,10 @@ public class EtcdMetadataStore implements MetadataStore {
                 return Optional.empty();
             }
             
-            String indexConfig = response.getKvs().get(0).getValue().toString(StandardCharsets.UTF_8);
+            String indexConfigJson = response.getKvs().get(0).getValue().toString(StandardCharsets.UTF_8);
             
             log.debug("Retrieved index config {} from etcd", indexName);
-            return Optional.of(indexConfig);
+            return Optional.of(indexConfigJson);
             
         } catch (Exception e) {
             log.error("Failed to get index config {} from etcd: {}", indexName, e.getMessage(), e);
@@ -452,34 +478,34 @@ public class EtcdMetadataStore implements MetadataStore {
     }
     
     @Override
-    public String createIndexConfig(String indexName, String indexConfig) throws Exception {
-        log.info("Creating index config {} in etcd", indexName);
+    public String createIndexConfig(Index index) throws Exception {
+        log.info("Creating index config {} in etcd", index.getIndexName());
         
         try {
-            String indexPath = pathResolver.getIndexConfPath(indexName);
-            executeEtcdPut(indexPath, indexConfig);
+            String indexPath = pathResolver.getIndexConfPath(index.getIndexName());
+            executeEtcdPut(indexPath, objectMapper.writeValueAsString(index));
             
-            log.info("Successfully created index config {} in etcd", indexName);
-            return indexName;
+            log.info("Successfully created index config {} in etcd", index.getIndexName());
+            return index.getIndexName();
             
         } catch (Exception e) {
-            log.error("Failed to create index config {} in etcd: {}", indexName, e.getMessage(), e);
+            log.error("Failed to create index config {} in etcd: {}", index.getIndexName(), e.getMessage(), e);
             throw new Exception("Failed to create index config in etcd", e);
         }
     }
     
     @Override
-    public void updateIndexConfig(String indexName, String indexConfig) throws Exception {
-        log.debug("Updating index config {} in etcd", indexName);
+    public void updateIndexConfig(Index index) throws Exception {
+        log.debug("Updating index config {} in etcd", index.getIndexName());
         
         try {
-            String indexPath = pathResolver.getIndexConfPath(indexName);
-            executeEtcdPut(indexPath, indexConfig);
+            String indexPath = pathResolver.getIndexConfPath(index.getIndexName());
+            executeEtcdPut(indexPath, objectMapper.writeValueAsString(index));
             
-            log.debug("Successfully updated index config {} in etcd", indexName);
+            log.debug("Successfully updated index config {} in etcd", index.getIndexName());
             
         } catch (Exception e) {
-            log.error("Failed to update index config {} in etcd: {}", indexName, e.getMessage(), e);
+            log.error("Failed to update index config {} in etcd: {}", index.getIndexName(), e.getMessage(), e);
             throw new Exception("Failed to update index config in etcd", e);
         }
     }
@@ -497,6 +523,93 @@ public class EtcdMetadataStore implements MetadataStore {
         } catch (Exception e) {
             log.error("Failed to delete index config {} from etcd: {}", indexName, e.getMessage(), e);
             throw new Exception("Failed to delete index config from etcd", e);
+        }
+    }
+    
+    @Override
+    public void setIndexMappings(String indexName, String mappings) throws Exception {
+        log.debug("Setting index mappings for {} in etcd", indexName);
+        
+        try {
+            String mappingsPath = pathResolver.getIndexMappingsPath(indexName);
+            executeEtcdPut(mappingsPath, mappings);
+            
+            log.debug("Successfully set index mappings for {} in etcd", indexName);
+            
+        } catch (Exception e) {
+            log.error("Failed to set index mappings for {} in etcd: {}", indexName, e.getMessage(), e);
+            throw new Exception("Failed to set index mappings in etcd", e);
+        }
+    }
+    
+    @Override
+    public void setIndexSettings(String indexName, String settings) throws Exception {
+        log.debug("Setting index settings for {} in etcd", indexName);
+        
+        try {
+            String settingsPath = pathResolver.getIndexSettingsPath(indexName);
+            executeEtcdPut(settingsPath, settings);
+            
+            log.debug("Successfully set index settings for {} in etcd", indexName);
+            
+        } catch (Exception e) {
+            log.error("Failed to set index settings for {} in etcd: {}", indexName, e.getMessage(), e);
+            throw new Exception("Failed to set index settings in etcd", e);
+        }
+    }
+    
+    // =================================================================
+    // SHARD ALLOCATION OPERATIONS
+    // =================================================================
+    
+    @Override
+    public List<ShardAllocation> getAllPlannedAllocations(String indexName) throws Exception {
+        log.debug("Getting all planned allocations for index {} from etcd", indexName);
+        
+        try {
+            // Get all keys under /<cluster-name>/indices/<index-name>/shard/*/planned-allocation
+            String shardPrefix = Paths.get(pathResolver.getIndicesPrefix(), indexName, "shard").toString();
+            GetResponse response = executeEtcdPrefixQuery(shardPrefix);
+            
+            List<ShardAllocation> allocations = new ArrayList<>();
+            for (var kv : response.getKvs()) {
+                String key = kv.getKey().toString(StandardCharsets.UTF_8);
+                String value = kv.getValue().toString(StandardCharsets.UTF_8);
+                
+                // Check if this is a planned-allocation key
+                if (key.endsWith("/planned-allocation")) {
+                    try {
+                        ShardAllocation allocation = objectMapper.readValue(value, ShardAllocation.class);
+                        allocations.add(allocation);
+                    } catch (Exception e) {
+                        log.warn("Failed to parse planned allocation JSON for key {}: {}", key, e.getMessage());
+                    }
+                }
+            }
+            
+            log.debug("Retrieved {} planned allocations for index {} from etcd", allocations.size(), indexName);
+            return allocations;
+            
+        } catch (Exception e) {
+            log.error("Failed to get planned allocations for index {} from etcd: {}", indexName, e.getMessage(), e);
+            throw new Exception("Failed to retrieve planned allocations from etcd", e);
+        }
+    }
+    
+    @Override
+    public void deletePlannedAllocation(String indexName, String shardId) throws Exception {
+        log.debug("Deleting planned allocation for index {} shard {} from etcd", indexName, shardId);
+        
+        try {
+            String allocationPath = pathResolver.getShardPlannedAllocationPath(indexName, shardId);
+            executeEtcdDelete(allocationPath);
+            
+            log.debug("Successfully deleted planned allocation for index {} shard {} from etcd", indexName, shardId);
+            
+        } catch (Exception e) {
+            log.error("Failed to delete planned allocation for index {} shard {} from etcd: {}", 
+                indexName, shardId, e.getMessage(), e);
+            throw new Exception("Failed to delete planned allocation from etcd", e);
         }
     }
     

@@ -1,5 +1,7 @@
 package io.clustercontroller.store;
 
+import io.clustercontroller.models.Index;
+import io.clustercontroller.models.ShardAllocation;
 import io.clustercontroller.models.TaskMetadata;
 import io.clustercontroller.models.SearchUnit;
 import io.clustercontroller.models.SearchUnitActualState;
@@ -95,6 +97,11 @@ public interface MetadataStore {
      * Get search unit actual state
      */
     Optional<SearchUnitActualState> getSearchUnitActualState(String unitName) throws Exception;
+    
+    /**
+     * Update search unit goal state
+     */
+    void updateSearchUnitGoalState(String unitName, SearchUnitGoalState goalState) throws Exception;
     // =================================================================
     // INDEX CONFIGURATIONS OPERATIONS
     // =================================================================
@@ -102,7 +109,7 @@ public interface MetadataStore {
     /**
      * Get all index configurations
      */
-    List<String> getAllIndexConfigs() throws Exception;
+    List<Index> getAllIndexConfigs() throws Exception;
     
     /**
      * Get index configuration by name
@@ -112,17 +119,41 @@ public interface MetadataStore {
     /**
      * Create new index configuration
      */
-    String createIndexConfig(String indexName, String indexConfig) throws Exception;
+    String createIndexConfig(Index index) throws Exception;
     
     /**
      * Update index configuration
      */
-    void updateIndexConfig(String indexName, String indexConfig) throws Exception;
+    void updateIndexConfig(Index index) throws Exception;
     
     /**
      * Delete index configuration
      */
     void deleteIndexConfig(String indexName) throws Exception;
+    
+    /**
+     * Set index mappings
+     */
+    void setIndexMappings(String indexName, String mappings) throws Exception;
+    
+    /**
+     * Set index settings
+     */
+    void setIndexSettings(String indexName, String settings) throws Exception;
+    
+    // =================================================================
+    // SHARD ALLOCATION OPERATIONS
+    // =================================================================
+    
+    /**
+     * Get all planned allocations for an index
+     */
+    List<ShardAllocation> getAllPlannedAllocations(String indexName) throws Exception;
+    
+    /**
+     * Delete a planned allocation for a specific shard
+     */
+    void deletePlannedAllocation(String indexName, String shardId) throws Exception;
     
     // =================================================================
     // CLUSTER OPERATIONS
