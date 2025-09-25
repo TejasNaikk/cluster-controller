@@ -62,6 +62,7 @@ public class IndexManager {
         Index newIndex = new Index();
         newIndex.setIndexName(indexName);
         newIndex.setShardReplicaCount(shardReplicaCount);
+        newIndex.setNumShards(numberOfShards);
         
         // Store the index configuration
         String indexConfigJson = objectMapper.writeValueAsString(newIndex);
