@@ -12,6 +12,7 @@ import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -149,19 +150,89 @@ public class IndexManager {
     /**
      * Get index settings.
      */
-    public String getSettings(String clusterId, String indexName) {
+    public String getSettings(String clusterId, String indexName) throws Exception {
         log.info("Getting settings for index: {}", indexName);
-        // TODO: Implement get settings logic
-        throw new UnsupportedOperationException("Get settings not yet implemented");
+        
+        // Validate input parameters
+        if (clusterId == null || clusterId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Cluster ID cannot be null or empty");
+        }
+        if (indexName == null || indexName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Index name cannot be null or empty");
+        }
+        
+        // Get settings from metadata store
+        Optional<String> settingsOpt = metadataStore.getIndexSettings(clusterId, indexName);
+        if (settingsOpt.isEmpty()) {
+            throw new IllegalArgumentException("Index '" + indexName + "' does not exist in cluster '" + clusterId + "'");
+        }
+        
+        return settingsOpt.get();
     }
     
     /**
-     * Update index settings.
+     * Update index settings. This method merges the existing settings with the new settings.
      */
-    public void updateSettings(String clusterId, String indexName, String settingsJson) {
+    public void updateSettings(String clusterId, String indexName, String settingsJson) throws Exception {
         log.info("Updating settings for index '{}' with: {}", indexName, settingsJson);
-        // TODO: Implement update settings logic
-        throw new UnsupportedOperationException("Update settings not yet implemented");
+
+        // Validate input parameters
+        if (clusterId == null || clusterId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Cluster ID cannot be null or empty");
+        }
+        if (indexName == null || indexName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Index name cannot be null or empty");
+        }
+        if (settingsJson == null || settingsJson.trim().isEmpty()) {
+            throw new IllegalArgumentException("Settings JSON cannot be null or empty");
+        }
+
+        // Check if index exists
+        if (!metadataStore.getIndexConfig(clusterId, indexName).isPresent()) {
+            throw new IllegalArgumentException("Index '" + indexName + "' does not exist in cluster '" + clusterId + "'");
+        }
+
+        // Parse and validate the new settings JSON
+        Map<String, Object> newSettings;
+        try {
+            newSettings = objectMapper.readValue(settingsJson, Map.class);
+            log.debug("Successfully parsed new settings JSON for index '{}': {}", indexName, newSettings);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid JSON format for settings: " + e.getMessage(), e);
+        }
+
+        // Validate that new settings is not empty
+        if (newSettings.isEmpty()) {
+            throw new IllegalArgumentException("Settings cannot be empty");
+        }
+
+        // Get existing settings and merge with new settings
+        Map<String, Object> existingSettings = new HashMap<>();
+        try {
+            Optional<String> existingSettingsOpt = metadataStore.getIndexSettings(clusterId, indexName);
+            if (existingSettingsOpt.isPresent()) {
+                existingSettings = objectMapper.readValue(existingSettingsOpt.get(), Map.class);
+                log.info("Retrieved existing settings for index '{}': {}", indexName, existingSettings);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to retrieve existing settings for index '{}', will create new settings: {}", indexName, e.getMessage());
+        }
+
+        // Merge existing settings with new settings (new settings override existing ones)
+        Map<String, Object> mergedSettings = deepMergeMaps(existingSettings, newSettings);
+        
+        log.info("Merged settings for index '{}': existing={}, new={}, merged={}", 
+            indexName, existingSettings, newSettings, mergedSettings);
+
+        // Update the settings in the metadata store with merged settings
+        try {
+            String mergedSettingsJson = objectMapper.writeValueAsString(mergedSettings);
+            metadataStore.setIndexSettings(clusterId, indexName, mergedSettingsJson);
+            log.info("Successfully updated settings for index '{}' in cluster '{}'", indexName, clusterId);
+        } catch (Exception e) {
+            log.error("Failed to update settings for index '{}' in cluster '{}': {}", indexName, clusterId, e.getMessage());
+            throw new Exception("Failed to update settings for index '" + indexName + "': " + e.getMessage(), e);
+        }
     }
     
     /**
@@ -240,6 +311,32 @@ public class IndexManager {
     }
 
 
+
+    /**
+     * Deep merge two maps, with the second map's values taking precedence.
+     * Handles nested maps by recursively merging them.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> deepMergeMaps(Map<String, Object> map1, Map<String, Object> map2) {
+        Map<String, Object> result = new HashMap<>(map1);
+        
+        for (Map.Entry<String, Object> entry : map2.entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
+            
+            if (result.containsKey(key) && result.get(key) instanceof Map && value instanceof Map) {
+                // Both values are maps, merge them recursively
+                Map<String, Object> nestedMap1 = (Map<String, Object>) result.get(key);
+                Map<String, Object> nestedMap2 = (Map<String, Object>) value;
+                result.put(key, deepMergeMaps(nestedMap1, nestedMap2));
+            } else {
+                // Replace the value (new value takes precedence)
+                result.put(key, value);
+            }
+        }
+        
+        return result;
+    }
 
     /**
      * Data class to hold parsed create index request
