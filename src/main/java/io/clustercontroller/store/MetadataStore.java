@@ -142,6 +142,11 @@ public interface MetadataStore {
     void setIndexMappings(String clusterId, String indexName, String mappings) throws Exception;
     
     /**
+     * Get index settings
+     */
+    Optional<String> getIndexSettings(String clusterId, String indexName) throws Exception;
+    
+    /**
      * Set index settings
      */
     void setIndexSettings(String clusterId, String indexName, String settings) throws Exception;

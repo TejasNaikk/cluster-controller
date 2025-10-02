@@ -550,6 +550,30 @@ public class EtcdMetadataStore implements MetadataStore {
     }
     
     @Override
+    public Optional<String> getIndexSettings(String clusterId, String indexName) throws Exception {
+        log.debug("Getting index settings for {} from etcd", indexName);
+        
+        try {
+            String settingsPath = pathResolver.getIndexSettingsPath(clusterId, indexName);
+            GetResponse response = executeEtcdGet(settingsPath);
+            
+            if (response.getCount() == 0) {
+                log.debug("Index settings {} not found in etcd", indexName);
+                return Optional.empty();
+            }
+            
+            String settingsJson = response.getKvs().get(0).getValue().toString(StandardCharsets.UTF_8);
+            
+            log.debug("Retrieved index settings {} from etcd", indexName);
+            return Optional.of(settingsJson);
+            
+        } catch (Exception e) {
+            log.error("Failed to get index settings {} from etcd: {}", indexName, e.getMessage(), e);
+            throw new Exception("Failed to retrieve index settings from etcd", e);
+        }
+    }
+    
+    @Override
     public void setIndexSettings(String clusterId, String indexName, String settings) throws Exception {
         log.debug("Setting index settings for {} in etcd", indexName);
         
