@@ -1,5 +1,6 @@
 package io.clustercontroller.tasks.impl;
 
+import io.clustercontroller.orchestration.GoalStateOrchestrator;
 import io.clustercontroller.tasks.Task;
 import io.clustercontroller.tasks.TaskContext;
 import lombok.AllArgsConstructor;
@@ -9,12 +10,12 @@ import lombok.extern.slf4j.Slf4j;
 import static io.clustercontroller.config.Constants.*;
 
 /**
- * Task implementation for discovering search units.
+ * Task to execute goal state orchestration
  */
 @Slf4j
 @Getter
 @AllArgsConstructor
-public class DiscoverSearchUnitTask implements Task {
+public class GoalStateOrchestratorTask implements Task {
     
     private final String name;
     private final int priority;
@@ -23,15 +24,15 @@ public class DiscoverSearchUnitTask implements Task {
     
     @Override
     public String execute(TaskContext context) {
-        log.info("Executing discover search unit task: {}", name);
+        log.info("Executing goal state orchestrator task: {}", name);
         
         try {
-            context.getDiscovery().discoverSearchUnits();
+            String clusterId = context.getClusterName();
+            context.getGoalStateOrchestrator().orchestrateGoalStates(clusterId);
             return TASK_STATUS_COMPLETED;
         } catch (Exception e) {
-            log.error("Failed to execute discover search unit task: {}", e.getMessage(), e);
+            log.error("Failed to execute goal state orchestrator task: {}", e.getMessage(), e);
             return TASK_STATUS_FAILED;
         }
     }
 }
-

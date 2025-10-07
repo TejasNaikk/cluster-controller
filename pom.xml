@@ -27,6 +27,13 @@
             <version>3.1.5</version>
         </dependency>
         
+        <!-- Spring Boot Actuator for health endpoints -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+            <version>3.1.5</version>
+        </dependency>
+        
         <!-- JSON Processing -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -67,6 +74,13 @@
             <groupId>io.etcd</groupId>
             <artifactId>jetcd-core</artifactId>
             <version>${jetcd.version}</version>
+        </dependency>
+        
+        <!-- YAML Processing -->
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>1.33</version>
         </dependency>
         
         <!-- Test Dependencies -->
