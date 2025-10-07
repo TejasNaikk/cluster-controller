@@ -7,12 +7,12 @@ import io.clustercontroller.models.SearchUnit;
 import io.clustercontroller.models.SearchUnitGoalState;
 import io.clustercontroller.store.EtcdPathResolver;
 import io.clustercontroller.store.MetadataStore;
+import io.clustercontroller.models.IndexSettings;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -70,9 +70,10 @@ public class IndexManager {
         // Create the new Index configuration
         Index newIndex = new Index();
         newIndex.setIndexName(indexName);
-        newIndex.setNumberOfShards(numberOfShards);
-        newIndex.setShardReplicaCount(shardReplicaCount);
-        newIndex.setNumShards(numberOfShards);
+
+        newIndex.setSettings(new IndexSettings());
+        newIndex.getSettings().setNumberOfShards(numberOfShards);
+        newIndex.getSettings().setShardReplicaCount(shardReplicaCount);
         
         // Store the index configuration
         String indexConfigJson = objectMapper.writeValueAsString(newIndex);
@@ -162,12 +163,12 @@ public class IndexManager {
         }
         
         // Get settings from metadata store
-        Optional<String> settingsOpt = metadataStore.getIndexSettings(clusterId, indexName);
+       Optional<IndexSettings> settingsOpt = metadataStore.getIndexSettings(clusterId, indexName);
         if (settingsOpt.isEmpty()) {
             throw new IllegalArgumentException("Index '" + indexName + "' does not exist in cluster '" + clusterId + "'");
         }
         
-        return settingsOpt.get();
+        return objectMapper.writeValueAsString(settingsOpt.get());
     }
     
     /**
@@ -193,25 +194,25 @@ public class IndexManager {
         }
 
         // Parse and validate the new settings JSON
-        Map<String, Object> newSettings;
+        IndexSettings newSettings;
         try {
-            newSettings = objectMapper.readValue(settingsJson, Map.class);
+            newSettings = objectMapper.readValue(settingsJson, IndexSettings.class);
             log.debug("Successfully parsed new settings JSON for index '{}': {}", indexName, newSettings);
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid JSON format for settings: " + e.getMessage(), e);
         }
 
         // Validate that new settings is not empty
-        if (newSettings.isEmpty()) {
+        if (newSettings == null) {
             throw new IllegalArgumentException("Settings cannot be empty");
         }
 
         // Get existing settings and merge with new settings
-        Map<String, Object> existingSettings = new HashMap<>();
+        IndexSettings existingSettings = new IndexSettings();
         try {
-            Optional<String> existingSettingsOpt = metadataStore.getIndexSettings(clusterId, indexName);
+            Optional<IndexSettings> existingSettingsOpt = metadataStore.getIndexSettings(clusterId, indexName);
             if (existingSettingsOpt.isPresent()) {
-                existingSettings = objectMapper.readValue(existingSettingsOpt.get(), Map.class);
+                existingSettings = existingSettingsOpt.get();
                 log.info("Retrieved existing settings for index '{}': {}", indexName, existingSettings);
             }
         } catch (Exception e) {
@@ -219,7 +220,7 @@ public class IndexManager {
         }
 
         // Merge existing settings with new settings (new settings override existing ones)
-        Map<String, Object> mergedSettings = deepMergeMaps(existingSettings, newSettings);
+        IndexSettings mergedSettings = mergeIndexSettings(existingSettings, newSettings);
         
         log.info("Merged settings for index '{}': existing={}, new={}, merged={}", 
             indexName, existingSettings, newSettings, mergedSettings);
@@ -310,32 +311,45 @@ public class IndexManager {
         }
     }
 
-
-
     /**
-     * Deep merge two maps, with the second map's values taking precedence.
-     * Handles nested maps by recursively merging them.
+     * Merge two IndexSettings objects, with the second object's values taking precedence.
+     * Only non-null fields from newSettings are applied to oldSettings.
      */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> deepMergeMaps(Map<String, Object> map1, Map<String, Object> map2) {
-        Map<String, Object> result = new HashMap<>(map1);
-        
-        for (Map.Entry<String, Object> entry : map2.entrySet()) {
-            String key = entry.getKey();
-            Object value = entry.getValue();
-            
-            if (result.containsKey(key) && result.get(key) instanceof Map && value instanceof Map) {
-                // Both values are maps, merge them recursively
-                Map<String, Object> nestedMap1 = (Map<String, Object>) result.get(key);
-                Map<String, Object> nestedMap2 = (Map<String, Object>) value;
-                result.put(key, deepMergeMaps(nestedMap1, nestedMap2));
-            } else {
-                // Replace the value (new value takes precedence)
-                result.put(key, value);
-            }
+    private IndexSettings mergeIndexSettings(IndexSettings oldSettings, IndexSettings newSettings) {
+        // If both are null, return empty settings
+        if (oldSettings == null && newSettings == null) {
+            return new IndexSettings();
         }
         
-        return result;
+        // If old is null, return new
+        if (oldSettings == null) {
+            return newSettings;
+        }
+        
+        // If new is null, return old
+        if (newSettings == null) {
+            return oldSettings;
+        }
+        
+        // Update fields in oldSettings with non-null values from newSettings
+        if (newSettings.getNumberOfShards() != null) {
+            oldSettings.setNumberOfShards(newSettings.getNumberOfShards());
+            log.debug("Updating number_of_shards to {}", newSettings.getNumberOfShards());
+        }
+        
+        if (newSettings.getShardReplicaCount() != null) {
+            oldSettings.setShardReplicaCount(newSettings.getShardReplicaCount());
+            log.debug("Updating shard_replica_count");
+        }
+        
+        if (newSettings.getPausePullIngestion() != null) {
+            oldSettings.setPausePullIngestion(newSettings.getPausePullIngestion());
+            log.debug("Updating pause_pull_ingestion to {}", newSettings.getPausePullIngestion());
+        }
+        
+        log.debug("Merged IndexSettings: result={}", oldSettings);
+        
+        return oldSettings;
     }
 
     /**

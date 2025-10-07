@@ -2,6 +2,7 @@ package io.clustercontroller.store;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.clustercontroller.models.Index;
+import io.clustercontroller.models.IndexSettings;
 import io.clustercontroller.models.SearchUnit;
 import io.clustercontroller.models.SearchUnitGoalState;
 import io.clustercontroller.models.ShardAllocation;
@@ -552,19 +553,22 @@ public class EtcdMetadataStoreTest {
     public void testGetIndexSettingsFound() throws Exception {
         EtcdMetadataStore store = newStore();
         String indexName = "test-index";
-        String expectedSettings = "{\"number_of_shards\": 3, \"number_of_replicas\": 2, \"refresh_interval\": \"30s\"}";
+        String settingsJson = "{\"number_of_shards\": 3, \"shard_replica_count\": [2, 2, 2], \"pause_pull_ingestion\": false}";
 
         // Mock successful get response
-        GetResponse resp = mockGetResponse(Collections.singletonList(mockKv(expectedSettings)));
+        GetResponse resp = mockGetResponse(Collections.singletonList(mockKv(settingsJson)));
         when(mockKv.get(any(ByteSequence.class)))
                 .thenReturn(CompletableFuture.completedFuture(resp));
 
         // Execute
-        Optional<String> result = store.getIndexSettings("test-cluster", indexName);
+        Optional<IndexSettings> result = store.getIndexSettings("test-cluster", indexName);
 
         // Verify
         assertThat(result).isPresent();
-        assertThat(result.get()).isEqualTo(expectedSettings);
+        IndexSettings settings = result.get();
+        assertThat(settings.getNumberOfShards()).isEqualTo(3);
+        assertThat(settings.getShardReplicaCount()).containsExactly(2, 2, 2);
+        assertThat(settings.getPausePullIngestion()).isFalse();
 
         // Verify the get call was made with correct key
         ArgumentCaptor<ByteSequence> keyCaptor = ArgumentCaptor.forClass(ByteSequence.class);
@@ -585,7 +589,7 @@ public class EtcdMetadataStoreTest {
                 .thenReturn(CompletableFuture.completedFuture(resp));
 
         // Execute
-        Optional<String> result = store.getIndexSettings("test-cluster", indexName);
+        Optional<IndexSettings> result = store.getIndexSettings("test-cluster", indexName);
 
         // Verify
         assertThat(result).isEmpty();
@@ -625,11 +629,12 @@ public class EtcdMetadataStoreTest {
                 .thenReturn(CompletableFuture.completedFuture(resp));
 
         // Execute
-        Optional<String> result = store.getIndexSettings("test-cluster", indexName);
+        Optional<IndexSettings> result = store.getIndexSettings("test-cluster", indexName);
 
-        // Verify
+        // Verify - empty JSON {} will parse to an IndexSettings object with default values
         assertThat(result).isPresent();
-        assertThat(result.get()).isEqualTo(emptySettings);
+        IndexSettings settings = result.get();
+        assertThat(settings.getNumberOfShards()).isEqualTo(1); // Default value
     }
 
     // ------------------------- lifecycle -------------------------

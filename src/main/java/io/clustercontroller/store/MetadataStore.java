@@ -6,6 +6,7 @@ import io.clustercontroller.models.SearchUnitActualState;
 import io.clustercontroller.models.SearchUnitGoalState;
 import io.clustercontroller.models.ShardAllocation;
 import io.clustercontroller.models.Index;
+import io.clustercontroller.models.IndexSettings;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -144,7 +145,7 @@ public interface MetadataStore {
     /**
      * Get index settings
      */
-    Optional<String> getIndexSettings(String clusterId, String indexName) throws Exception;
+    Optional<IndexSettings> getIndexSettings(String clusterId, String indexName) throws Exception;
     
     /**
      * Set index settings
