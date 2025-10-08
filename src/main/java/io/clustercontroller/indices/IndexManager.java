@@ -163,12 +163,12 @@ public class IndexManager {
         }
         
         // Get settings from metadata store
-       IndexSettings settingsOpt = metadataStore.getIndexSettings(clusterId, indexName);
-        if (settingsOpt == null) {
+       IndexSettings settings = metadataStore.getIndexSettings(clusterId, indexName);
+        if (settings == null) {
             throw new IllegalArgumentException("Index '" + indexName + "' does not exist in cluster '" + clusterId + "'");
         }
         
-        return objectMapper.writeValueAsString(settingsOpt);
+        return objectMapper.writeValueAsString(settings);
     }
     
     /**
@@ -211,9 +211,7 @@ public class IndexManager {
         IndexSettings existingSettings = null;
         try {
             existingSettings = metadataStore.getIndexSettings(clusterId, indexName);
-            if (existingSettings != null) {
-                log.info("Retrieved existing settings for index '{}': {}", indexName, existingSettings);
-            }
+            log.debug("Retrieved existing settings for index '{}': {}", indexName, existingSettings);
         } catch (Exception e) {
             log.warn("Failed to retrieve existing settings for index '{}', will create new settings: {}", indexName, e.getMessage());
         }
