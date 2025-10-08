@@ -41,7 +41,7 @@ class ImmediateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(numberOfShards);
+        indexConfig.getSettings().setNumberOfShards(numberOfShards);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(Arrays.asList("node1"));
@@ -74,11 +74,11 @@ class ImmediateOrchestrationStrategyTest {
         
         Index index1 = new Index();
         index1.setIndexName("index1");
-        index1.setNumberOfShards(2);
+        index1.getSettings().setNumberOfShards(2);
         
         Index index2 = new Index();
         index2.setIndexName("index2");
-        index2.setNumberOfShards(1);
+        index2.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned1_0 = new ShardAllocation();
         planned1_0.setIngestSUs(Arrays.asList("node1"));
@@ -124,7 +124,7 @@ class ImmediateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         when(metadataStore.getAllIndexConfigs(clusterId)).thenReturn(Arrays.asList(indexConfig));
         when(metadataStore.getPlannedAllocation(clusterId, indexName, "0")).thenReturn(null);
@@ -161,7 +161,7 @@ class ImmediateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(Arrays.asList("node1"));
@@ -190,11 +190,11 @@ class ImmediateOrchestrationStrategyTest {
         
         Index index1 = new Index();
         index1.setIndexName("index1");
-        index1.setNumberOfShards(1);
+        index1.getSettings().setNumberOfShards(1);
         
         Index index2 = new Index();
         index2.setIndexName("index2");
-        index2.setNumberOfShards(1);
+        index2.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned2 = new ShardAllocation();
         planned2.setIngestSUs(Arrays.asList("node1"));
@@ -232,7 +232,7 @@ class ImmediateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(Arrays.asList("node1"));
@@ -299,7 +299,7 @@ class ImmediateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(Arrays.asList("node1"));
@@ -328,7 +328,7 @@ class ImmediateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(Arrays.asList("node1"));
@@ -363,7 +363,7 @@ class ImmediateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(Arrays.asList());
@@ -389,7 +389,7 @@ class ImmediateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(null);

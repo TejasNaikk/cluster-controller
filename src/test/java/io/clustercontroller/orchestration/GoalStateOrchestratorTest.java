@@ -105,7 +105,7 @@ class GoalStateOrchestratorTest {
         String clusterId = "test-cluster";
         Index index = new Index();
         index.setIndexName("test-index");
-        index.setNumberOfShards(2);
+        index.getSettings().setNumberOfShards(2);
         List<Index> indexConfigs = List.of(index);
         
         when(metadataStore.getAllIndexConfigs(clusterId)).thenReturn(indexConfigs);

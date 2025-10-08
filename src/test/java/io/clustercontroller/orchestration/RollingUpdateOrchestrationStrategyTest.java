@@ -41,7 +41,7 @@ class RollingUpdateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(Arrays.asList("node1"));
@@ -73,7 +73,7 @@ class RollingUpdateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(Arrays.asList("node1"));
@@ -118,7 +118,7 @@ class RollingUpdateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(Arrays.asList("node1"));
@@ -157,7 +157,7 @@ class RollingUpdateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(Arrays.asList("node1"));
@@ -202,7 +202,7 @@ class RollingUpdateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         when(metadataStore.getAllIndexConfigs(clusterId)).thenReturn(Arrays.asList(indexConfig));
         when(metadataStore.getPlannedAllocation(clusterId, indexName, "0")).thenReturn(null);
@@ -224,7 +224,7 @@ class RollingUpdateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(Arrays.asList());
@@ -249,11 +249,11 @@ class RollingUpdateOrchestrationStrategyTest {
         
         Index index1 = new Index();
         index1.setIndexName("index1");
-        index1.setNumberOfShards(1);
+        index1.getSettings().setNumberOfShards(1);
         
         Index index2 = new Index();
         index2.setIndexName("index2");
-        index2.setNumberOfShards(1);
+        index2.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned2 = new ShardAllocation();
         planned2.setIngestSUs(Arrays.asList("node1"));
@@ -290,7 +290,7 @@ class RollingUpdateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(Arrays.asList("node1"));
@@ -321,11 +321,11 @@ class RollingUpdateOrchestrationStrategyTest {
         
         Index index1 = new Index();
         index1.setIndexName("index1");
-        index1.setNumberOfShards(2);
+        index1.getSettings().setNumberOfShards(2);
         
         Index index2 = new Index();
         index2.setIndexName("index2");
-        index2.setNumberOfShards(1);
+        index2.getSettings().setNumberOfShards(1);
         
         // Create planned allocations with 10 nodes each (1 primary + 9 replicas)
         ShardAllocation planned1_0 = new ShardAllocation();
@@ -451,7 +451,7 @@ class RollingUpdateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         // Create planned allocation with 10 nodes (1 primary + 9 replicas)
         ShardAllocation planned = new ShardAllocation();
@@ -520,7 +520,7 @@ class RollingUpdateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         // Create planned allocation with 10 nodes (1 primary + 9 replicas)
         ShardAllocation planned = new ShardAllocation();
@@ -579,7 +579,7 @@ class RollingUpdateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         when(metadataStore.getAllIndexConfigs(clusterId)).thenReturn(Arrays.asList(indexConfig));
         when(metadataStore.getPlannedAllocation(clusterId, indexName, "0"))
@@ -602,7 +602,7 @@ class RollingUpdateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(Arrays.asList("node1"));
@@ -631,7 +631,7 @@ class RollingUpdateOrchestrationStrategyTest {
         
         Index indexConfig = new Index();
         indexConfig.setIndexName(indexName);
-        indexConfig.setNumberOfShards(1);
+        indexConfig.getSettings().setNumberOfShards(1);
         
         ShardAllocation planned = new ShardAllocation();
         planned.setIngestSUs(Arrays.asList("node1"));
