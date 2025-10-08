@@ -335,71 +335,13 @@ class IndexManagerTest {
         String clusterId = "test-cluster";
         String indexName = "non-existent-index";
 
-        // Mock dependencies - both settings and index config not found
+        // Mock dependencies - settings not found
         when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(Optional.empty());
-        when(metadataStore.getIndexConfig(clusterId, indexName)).thenReturn(Optional.empty());
 
         // When & Then
         assertThatThrownBy(() -> indexManager.getSettings(clusterId, indexName))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Index 'non-existent-index' does not exist in cluster 'test-cluster'");
-    }
-
-    @Test
-    void testGetSettings_FallbackToIndexConfig() throws Exception {
-        // Given
-        String clusterId = "test-cluster";
-        String indexName = "test-index";
-        
-        // Create an Index object with settings
-        Index index = new Index();
-        index.setIndexName(indexName);
-        IndexSettings indexSettings = new IndexSettings();
-        indexSettings.setNumberOfShards(5);
-        indexSettings.setShardReplicaCount(List.of(1, 1, 1, 1, 1));
-        index.setSettings(indexSettings);
-        
-        String indexConfigJson = new ObjectMapper().writeValueAsString(index);
-
-        // Mock dependencies - settings not found separately but index config exists
-        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(Optional.empty());
-        when(metadataStore.getIndexConfig(clusterId, indexName)).thenReturn(Optional.of(indexConfigJson));
-
-        // When
-        String result = indexManager.getSettings(clusterId, indexName);
-
-        // Then
-        assertThat(result).contains("\"number_of_shards\":5");
-        assertThat(result).contains("\"shard_replica_count\"");
-        verify(metadataStore).getIndexSettings(clusterId, indexName);
-        verify(metadataStore).getIndexConfig(clusterId, indexName);
-    }
-
-    @Test
-    void testGetSettings_FallbackToIndexConfigWithNoSettings() throws Exception {
-        // Given
-        String clusterId = "test-cluster";
-        String indexName = "test-index";
-        
-        // Create an Index object without settings
-        Index index = new Index();
-        index.setIndexName(indexName);
-        index.setSettings(null);
-        
-        String indexConfigJson = new ObjectMapper().writeValueAsString(index);
-
-        // Mock dependencies - settings not found separately and index config has no settings
-        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(Optional.empty());
-        when(metadataStore.getIndexConfig(clusterId, indexName)).thenReturn(Optional.of(indexConfigJson));
-
-        // When
-        String result = indexManager.getSettings(clusterId, indexName);
-
-        // Then - should return default settings
-        assertThat(result).isNotNull();
-        assertThat(result).contains("\"number_of_shards\"");
-        verify(metadataStore).getIndexSettings(clusterId, indexName);
-        verify(metadataStore).getIndexConfig(clusterId, indexName);
     }
 
     // ========== updateSettings Tests ==========
@@ -552,15 +494,15 @@ class IndexManagerTest {
         when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(Optional.of(existingSettings));
         doNothing().when(metadataStore).setIndexSettings(eq(clusterId), eq(indexName), any(String.class));
 
-        // When - empty JSON object {} will have default numShards=1, so it's not considered empty
+        // When - empty JSON object {} will have all fields as null, so nothing gets merged
         indexManager.updateSettings(clusterId, indexName, settingsJson);
 
-        // Then - should succeed because {} has default numShards value
+        // Then - should succeed and preserve existing settings since no fields were provided
         ArgumentCaptor<String> settingsCaptor = ArgumentCaptor.forClass(String.class);
         verify(metadataStore).setIndexSettings(eq(clusterId), eq(indexName), settingsCaptor.capture());
         
         String mergedSettings = settingsCaptor.getValue();
-        assertThat(mergedSettings).contains("\"number_of_shards\":1"); // Default value
+        assertThat(mergedSettings).contains("\"number_of_shards\":3"); // Preserved from existing
     }
 
     @Test

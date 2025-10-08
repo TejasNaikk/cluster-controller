@@ -373,9 +373,9 @@ public class EtcdMetadataStoreTest {
 
         // Mock response with keys that end with /conf (index configs) and other keys (settings, mappings)
         GetResponse resp = mockGetResponse(Arrays.asList(
-                mockKvWithKey("/test-cluster/indices/index1/conf", "{\"index_name\":\"index1\",\"shard_replica_count\":[1,2]}"),
+                mockKvWithKey("/test-cluster/indices/index1/conf", "{\"index_name\":\"index1\",\"settings\":{\"shard_replica_count\":[1,2],\"number_of_shards\":2}}"),
                 mockKvWithKey("/test-cluster/indices/index1/settings", "{\"number_of_shards\":1,\"number_of_replicas\":2}"),
-                mockKvWithKey("/test-cluster/indices/index2/conf", "{\"index_name\":\"index2\",\"shard_replica_count\":[3]}"),
+                mockKvWithKey("/test-cluster/indices/index2/conf", "{\"index_name\":\"index2\",\"settings\":{\"shard_replica_count\":[3],\"number_of_shards\":1}}"),
                 mockKvWithKey("/test-cluster/indices/index2/mappings", "{\"properties\":{\"title\":{\"type\":\"text\"}}}")
         ));
         when(mockKv.get(any(ByteSequence.class), any(GetOption.class)))
@@ -568,7 +568,7 @@ public class EtcdMetadataStoreTest {
         IndexSettings settings = result.get();
         assertThat(settings.getNumberOfShards()).isEqualTo(3);
         assertThat(settings.getShardReplicaCount()).containsExactly(2, 2, 2);
-        assertThat(settings.getPausePullIngestion()).isFalse();
+        assertThat(settings.getPausePullIngestion()).isEqualTo(false);
 
         // Verify the get call was made with correct key
         ArgumentCaptor<ByteSequence> keyCaptor = ArgumentCaptor.forClass(ByteSequence.class);
@@ -631,10 +631,12 @@ public class EtcdMetadataStoreTest {
         // Execute
         Optional<IndexSettings> result = store.getIndexSettings("test-cluster", indexName);
 
-        // Verify - empty JSON {} will parse to an IndexSettings object with default values
+        // Verify - empty JSON {} will parse to an IndexSettings object with all null fields
         assertThat(result).isPresent();
         IndexSettings settings = result.get();
-        assertThat(settings.getNumberOfShards()).isEqualTo(1); // Default value
+        assertThat(settings.getNumberOfShards()).isNull(); // No default value
+        assertThat(settings.getShardReplicaCount()).isNull();
+        assertThat(settings.getPausePullIngestion()).isNull();
     }
 
     // ------------------------- lifecycle -------------------------
