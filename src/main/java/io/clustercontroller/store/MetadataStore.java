@@ -145,7 +145,7 @@ public interface MetadataStore {
     /**
      * Get index settings
      */
-    Optional<IndexSettings> getIndexSettings(String clusterId, String indexName) throws Exception;
+    IndexSettings getIndexSettings(String clusterId, String indexName) throws Exception;
     
     /**
      * Set index settings

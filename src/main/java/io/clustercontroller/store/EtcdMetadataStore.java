@@ -551,7 +551,7 @@ public class EtcdMetadataStore implements MetadataStore {
     }
     
     @Override
-    public Optional<IndexSettings> getIndexSettings(String clusterId, String indexName) throws Exception {
+    public IndexSettings getIndexSettings(String clusterId, String indexName) throws Exception {
         log.debug("Getting index settings for {} from etcd", indexName);
         
         try {
@@ -560,7 +560,7 @@ public class EtcdMetadataStore implements MetadataStore {
             
             if (response.getCount() == 0) {
                 log.debug("Index settings {} not found in etcd", indexName);
-                return Optional.empty();
+                return null;
             }
             
             String settingsJson = response.getKvs().get(0).getValue().toString(StandardCharsets.UTF_8);
@@ -582,7 +582,7 @@ public class EtcdMetadataStore implements MetadataStore {
             }
             
             log.debug("Successfully parsed index settings for {}: {}", indexName, settings);
-            return Optional.of(settings);
+            return settings;
             
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             log.error("Failed to parse index settings JSON for {} from etcd: {}", indexName, e.getMessage(), e);

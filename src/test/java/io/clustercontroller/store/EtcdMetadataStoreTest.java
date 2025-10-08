@@ -561,14 +561,13 @@ public class EtcdMetadataStoreTest {
                 .thenReturn(CompletableFuture.completedFuture(resp));
 
         // Execute
-        Optional<IndexSettings> result = store.getIndexSettings("test-cluster", indexName);
+        IndexSettings result = store.getIndexSettings("test-cluster", indexName);
 
         // Verify
-        assertThat(result).isPresent();
-        IndexSettings settings = result.get();
-        assertThat(settings.getNumberOfShards()).isEqualTo(3);
-        assertThat(settings.getShardReplicaCount()).containsExactly(2, 2, 2);
-        assertThat(settings.getPausePullIngestion()).isEqualTo(false);
+        assertThat(result).isNotNull();
+        assertThat(result.getNumberOfShards()).isEqualTo(3);
+        assertThat(result.getShardReplicaCount()).containsExactly(2, 2, 2);
+        assertThat(result.getPausePullIngestion()).isEqualTo(false);
 
         // Verify the get call was made with correct key
         ArgumentCaptor<ByteSequence> keyCaptor = ArgumentCaptor.forClass(ByteSequence.class);
@@ -589,10 +588,10 @@ public class EtcdMetadataStoreTest {
                 .thenReturn(CompletableFuture.completedFuture(resp));
 
         // Execute
-        Optional<IndexSettings> result = store.getIndexSettings("test-cluster", indexName);
+        IndexSettings result = store.getIndexSettings("test-cluster", indexName);
 
         // Verify
-        assertThat(result).isEmpty();
+        assertThat(result).isNull();
 
         // Verify the get call was made with correct key
         ArgumentCaptor<ByteSequence> keyCaptor = ArgumentCaptor.forClass(ByteSequence.class);
@@ -629,14 +628,13 @@ public class EtcdMetadataStoreTest {
                 .thenReturn(CompletableFuture.completedFuture(resp));
 
         // Execute
-        Optional<IndexSettings> result = store.getIndexSettings("test-cluster", indexName);
+        IndexSettings result = store.getIndexSettings("test-cluster", indexName);
 
         // Verify - empty JSON {} will parse to an IndexSettings object with all null fields
-        assertThat(result).isPresent();
-        IndexSettings settings = result.get();
-        assertThat(settings.getNumberOfShards()).isNull(); // No default value
-        assertThat(settings.getShardReplicaCount()).isNull();
-        assertThat(settings.getPausePullIngestion()).isNull();
+        assertThat(result).isNotNull();
+        assertThat(result.getNumberOfShards()).isNull(); // No default value
+        assertThat(result.getShardReplicaCount()).isNull();
+        assertThat(result.getPausePullIngestion()).isNull();
     }
 
     // ------------------------- lifecycle -------------------------

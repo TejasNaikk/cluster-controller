@@ -294,7 +294,7 @@ class IndexManagerTest {
         expectedSettings.setPausePullIngestion(true);
 
         // Mock dependencies
-        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(Optional.of(expectedSettings));
+        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(expectedSettings);
 
         // When
         String result = indexManager.getSettings(clusterId, indexName);
@@ -336,7 +336,7 @@ class IndexManagerTest {
         String indexName = "non-existent-index";
 
         // Mock dependencies - settings not found
-        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(Optional.empty());
+        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(null);
 
         // When & Then
         assertThatThrownBy(() -> indexManager.getSettings(clusterId, indexName))
@@ -363,7 +363,7 @@ class IndexManagerTest {
 
         // Mock dependencies
         when(metadataStore.getIndexConfig(clusterId, indexName)).thenReturn(Optional.of("existing-config"));
-        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(Optional.of(existingSettings));
+        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(existingSettings);
         doNothing().when(metadataStore).setIndexSettings(eq(clusterId), eq(indexName), any(String.class));
 
         // When
@@ -394,7 +394,7 @@ class IndexManagerTest {
 
         // Mock dependencies
         when(metadataStore.getIndexConfig(clusterId, indexName)).thenReturn(Optional.of("existing-config"));
-        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(Optional.empty());
+        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(null);
         doNothing().when(metadataStore).setIndexSettings(eq(clusterId), eq(indexName), any(String.class));
 
         // When
@@ -491,7 +491,7 @@ class IndexManagerTest {
 
         // Mock dependencies
         when(metadataStore.getIndexConfig(clusterId, indexName)).thenReturn(Optional.of("existing-config"));
-        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(Optional.of(existingSettings));
+        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(existingSettings);
         doNothing().when(metadataStore).setIndexSettings(eq(clusterId), eq(indexName), any(String.class));
 
         // When - empty JSON object {} will have all fields as null, so nothing gets merged
@@ -530,7 +530,7 @@ class IndexManagerTest {
 
         // Mock dependencies
         when(metadataStore.getIndexConfig(clusterId, indexName)).thenReturn(Optional.of("existing-config"));
-        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(Optional.empty());
+        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(null);
         doThrow(new RuntimeException("Database connection failed"))
                 .when(metadataStore).setIndexSettings(eq(clusterId), eq(indexName), any(String.class));
 
@@ -559,7 +559,7 @@ class IndexManagerTest {
 
         // Mock dependencies
         when(metadataStore.getIndexConfig(clusterId, indexName)).thenReturn(Optional.of("existing-config"));
-        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(Optional.of(existingSettings));
+        when(metadataStore.getIndexSettings(clusterId, indexName)).thenReturn(existingSettings);
         doNothing().when(metadataStore).setIndexSettings(eq(clusterId), eq(indexName), any(String.class));
 
         // When
