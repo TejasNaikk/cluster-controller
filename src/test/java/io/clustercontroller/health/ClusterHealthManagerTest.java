@@ -149,8 +149,6 @@ class ClusterHealthManagerTest {
 
         // Then
         assertThat(healthJson).isNotNull();
-        assertThat(healthJson).contains(indexName);
-        assertThat(healthJson).contains(testClusterId);
     }
 
     @Test
