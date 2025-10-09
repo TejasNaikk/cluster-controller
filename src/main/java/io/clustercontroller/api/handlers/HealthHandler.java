@@ -47,9 +47,7 @@ public class HealthHandler {
         try {
             log.info("Getting cluster health for cluster '{}' with level: {}", clusterId, level);
             String healthJson = healthManager.getClusterHealth(clusterId, level);
-            return ResponseEntity.status(501).body(ErrorResponse.notImplemented("Cluster health"));
-        } catch (UnsupportedOperationException e) {
-            return ResponseEntity.status(501).body(ErrorResponse.notImplemented("Cluster health"));
+            return ResponseEntity.ok(healthJson);
         } catch (Exception e) {
             log.error("Error getting cluster health for cluster '{}': {}", clusterId, e.getMessage());
             return ResponseEntity.status(500).body(ErrorResponse.internalError(e.getMessage()));
@@ -63,13 +61,12 @@ public class HealthHandler {
     @GetMapping("/health/{index}")
     public ResponseEntity<Object> getIndexHealth(
             @PathVariable String clusterId,
-            @PathVariable String index) {
+            @PathVariable String index,
+            @RequestParam(value = "level", defaultValue = "indices") String level) {
         try {
             log.info("Getting health for index '{}' in cluster '{}'", index, clusterId);
-            String healthJson = healthManager.getIndexHealth(clusterId, index, "indices");
-            return ResponseEntity.status(501).body(ErrorResponse.notImplemented("Index health"));
-        } catch (UnsupportedOperationException e) {
-            return ResponseEntity.status(501).body(ErrorResponse.notImplemented("Index health"));
+            String healthJson = healthManager.getIndexHealth(clusterId, index, level);
+            return ResponseEntity.ok(healthJson);
         } catch (Exception e) {
             log.error("Error getting health for index '{}' in cluster '{}': {}", index, clusterId, e.getMessage());
             return ResponseEntity.status(500).body(ErrorResponse.internalError(e.getMessage()));
