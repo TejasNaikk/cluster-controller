@@ -196,39 +196,57 @@ public class TaskManager {
     
     /**
      * Bootstrap recurring system tasks at startup.
-     * Creates the core allocation and orchestration tasks if they don't already exist.
+     * Creates the core allocation and orchestration tasks for ALL clusters in etcd.
      */
     private void bootstrapRecurringTasks() {
-        log.info("Bootstrapping recurring system tasks");
+        log.info("Bootstrapping recurring system tasks for all clusters");
         
         try {
-            createRecurringTaskIfNotExists(TASK_ACTION_SHARD_ALLOCATOR, 0);
-            createRecurringTaskIfNotExists(TASK_ACTION_ACTUAL_ALLOCATION_UPDATER, 1);
-            createRecurringTaskIfNotExists(TASK_ACTION_GOAL_STATE_ORCHESTRATOR, 2);
+            // Discover all clusters in etcd
+            List<String> clusters = metadataStore.getAllClusters();
             
-            log.info("Successfully bootstrapped recurring system tasks");
+            if (clusters.isEmpty()) {
+                log.warn("No clusters found in etcd, creating tasks for default cluster: {}", clusterName);
+                clusters = List.of(clusterName);
+            }
+            
+            log.info("Found {} clusters, bootstrapping tasks for each", clusters.size());
+            
+            // Create tasks for each cluster
+            for (String cluster : clusters) {
+                log.info("Bootstrapping tasks for cluster: {}", cluster);
+                createRecurringTaskIfNotExists(cluster, TASK_ACTION_SHARD_ALLOCATOR, 0);
+                createRecurringTaskIfNotExists(cluster, TASK_ACTION_ACTUAL_ALLOCATION_UPDATER, 1);
+                createRecurringTaskIfNotExists(cluster, TASK_ACTION_GOAL_STATE_ORCHESTRATOR, 2);
+            }
+            
+            log.info("Successfully bootstrapped recurring system tasks for {} cluster(s)", clusters.size());
         } catch (Exception e) {
             log.error("Error bootstrapping recurring tasks: {}", e.getMessage(), e);
         }
     }
     
     /**
-     * Create a recurring task if it doesn't already exist.
+     * Create a recurring task for a specific cluster if it doesn't already exist.
      */
-    private void createRecurringTaskIfNotExists(String taskName, int priority) {
+    private void createRecurringTaskIfNotExists(String clusterId, String taskName, int priority) {
         try {
-            if (getTask(taskName).isPresent()) {
-                log.debug("Task '{}' already exists, skipping creation", taskName);
+            // Check if task already exists for this cluster
+            Optional<TaskMetadata> existingTask = metadataStore.getTask(clusterId, taskName);
+            if (existingTask.isPresent()) {
+                log.debug("Task '{}' already exists for cluster '{}', skipping creation", taskName, clusterId);
                 return;
             }
             
-            TaskMetadata task = createTask(taskName, "", priority);
+            // Create new task for this cluster
+            TaskMetadata task = new TaskMetadata(taskName, priority);
+            task.setInput("");
             task.setSchedule(TASK_SCHEDULE_REPEAT);
-            updateTask(task);
+            metadataStore.createTask(clusterId, task);
             
-            log.info("Created recurring task: {} (priority: {})", taskName, priority);
+            log.info("Created recurring task '{}' for cluster '{}' (priority: {})", taskName, clusterId, priority);
         } catch (Exception e) {
-            log.warn("Failed to create recurring task '{}': {}", taskName, e.getMessage());
+            log.warn("Failed to create recurring task '{}' for cluster '{}': {}", taskName, clusterId, e.getMessage());
         }
     }
 }
