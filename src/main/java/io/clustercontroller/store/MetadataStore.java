@@ -186,6 +186,11 @@ public interface MetadataStore {
     // =================================================================
     
     /**
+     * Discover all available clusters in etcd by scanning key prefixes
+     */
+    List<String> getAllClusters() throws Exception;
+    
+    /**
      * Initialize/setup the metadata store
      */
     void initialize() throws Exception;

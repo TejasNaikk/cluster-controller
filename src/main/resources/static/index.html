@@ -630,7 +630,12 @@
 <body>
     <div class="header">
         <h1>🔍 Cloud Native Opensearch Controller</h1>
-        <div class="cluster-info">Cluster: <span id="clusterName">Loading...</span></div>
+        <div class="cluster-info">
+            Cluster: 
+            <select id="clusterSelector" style="background: white; color: #333; padding: 0.25rem 0.5rem; border-radius: 4px; border: 1px solid #ddd; margin-left: 0.5rem; cursor: pointer;">
+                <option value="">Loading...</option>
+            </select>
+        </div>
         <div class="auto-refresh">
             <input type="checkbox" id="autoRefresh">
             <label for="autoRefresh">Auto-refresh (5s)</label>
@@ -738,6 +743,55 @@
         let currentTab = 'overview';
         let autoRefreshInterval = null;
         let clusterData = {};
+        let selectedCluster = null;
+        
+        // Load available clusters
+        async function loadClusters() {
+            try {
+                const response = await fetch('/visualizer/clusters');
+                const data = await response.json();
+                
+                const selector = document.getElementById('clusterSelector');
+                selector.innerHTML = '';
+                
+                if (data.clusters && data.clusters.length > 0) {
+                    data.clusters.forEach(cluster => {
+                        const option = document.createElement('option');
+                        option.value = cluster;
+                        option.textContent = cluster;
+                        if (cluster === data.default_cluster) {
+                            option.selected = true;
+                        }
+                        selector.appendChild(option);
+                    });
+                    
+                    // Set selected cluster
+                    selectedCluster = data.default_cluster || data.clusters[0];
+                    console.log('Loaded clusters:', data.clusters, 'Selected:', selectedCluster);
+                } else {
+                    selector.innerHTML = '<option value="">No clusters found</option>';
+                }
+            } catch (error) {
+                console.error('Error loading clusters:', error);
+                document.getElementById('clusterSelector').innerHTML = '<option value="">Error loading clusters</option>';
+            }
+        }
+        
+        // Handle cluster selection change
+        document.addEventListener('DOMContentLoaded', () => {
+            const selector = document.getElementById('clusterSelector');
+            selector.addEventListener('change', (event) => {
+                selectedCluster = event.target.value;
+                console.log('Cluster changed to:', selectedCluster);
+                loadTabData(currentTab);
+            });
+            
+            // Load clusters on page load
+            loadClusters().then(() => {
+                // Load initial tab data
+                loadTabData(currentTab);
+            });
+        });
         
         // Tab management
         function showTab(tabName) {
@@ -791,12 +845,15 @@
         
         // Load cluster overview
         async function loadClusterOverview() {
-            const response = await fetch('/visualizer/cluster');
+            if (!selectedCluster) {
+                console.warn('No cluster selected');
+                return;
+            }
+            const response = await fetch(`/visualizer/${selectedCluster}/cluster`);
             const data = await response.json();
             clusterData = data;
             
-            // Update cluster name in header
-            document.getElementById('clusterName').textContent = data.cluster_name || 'N/A';
+            // Update cluster badge
             document.getElementById('clusterBadge').textContent = data.cluster_name || 'Cluster Name';
 
             // Render cluster stats
@@ -1344,11 +1401,65 @@
         }
         
         // Load allocation matrix
-        // BROKEN FUNCTION COMMENTED OUT - see allocation-fix.js
         async function loadAllocationMatrix() {
-            // This function is overridden in allocation-fix.js
-            const container = document.getElementById("allocation-matrix-container");
-            container.innerHTML = "<div class=\"loading\">Loading allocation matrix...</div>";
+            if (!selectedCluster) {
+                console.warn('No cluster selected');
+                return;
+            }
+            const response = await fetch(`/visualizer/${selectedCluster}/allocation-matrix`);
+            const data = await response.json();
+            
+            const container = document.getElementById('allocation-matrix-container');
+            
+            if (!data.allocations || Object.keys(data.allocations).length === 0) {
+                container.innerHTML = '<div class="loading">No allocation data available</div>';
+                return;
+            }
+            
+            let html = `
+                <div class="matrix-header" style="margin-bottom: 1rem;">
+                    <h3>Shard Allocation Matrix</h3>
+                    <div class="matrix-legend" style="margin-top: 0.5rem; padding: 0.5rem; background: #f5f5f5; border-radius: 4px;">
+                        <strong>Legend:</strong> 
+                        <span style="margin-left: 1rem;"><strong>p</strong> = Primary (Ingest)</span>
+                        <span style="margin-left: 1rem;"><strong>r</strong> = Replica (Search)</span>
+                    </div>
+                </div>
+            `;
+            
+            for (const [indexName, nodeAllocations] of Object.entries(data.allocations)) {
+                html += `
+                    <div class="index-allocation-section" style="margin-bottom: 2rem; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+                        <div class="index-header" style="background: #667eea; color: white; padding: 1rem;">
+                            <h4 style="margin: 0;">${indexName}</h4>
+                        </div>
+                        <div style="padding: 1rem;">
+                            <table class="matrix-table" style="width: 100%; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="background: #f8f9fa;">
+                                        <th style="border: 1px solid #ddd; padding: 0.5rem; text-align: left;">Node</th>
+                                        <th style="border: 1px solid #ddd; padding: 0.5rem; text-align: left;">Shards</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                `;
+                
+                for (const [nodeName, shards] of Object.entries(nodeAllocations)) {
+                    html += `<tr><td style="border: 1px solid #ddd; padding: 0.5rem; font-weight: bold;">${nodeName}</td><td style="border: 1px solid #ddd; padding: 0.5rem;">`;
+                    shards.forEach(shard => {
+                        const isPrimary = shard.endsWith('p');
+                        const shardNum = shard.slice(0, -1);
+                        const color = isPrimary ? '#28a745' : '#007bff';
+                        const label = isPrimary ? 'Primary' : 'Replica';
+                        html += `<span style="display: inline-block; margin: 0.25rem; padding: 0.25rem 0.5rem; background: ${color}; color: white; border-radius: 3px; font-size: 0.9rem;">Shard ${shardNum} (${label})</span>`;
+                    });
+                    html += `</td></tr>`;
+                }
+                
+                html += `</tbody></table></div></div>`;
+            }
+            
+            container.innerHTML = html;
         }
         
         // Function to render Goal States Overview
@@ -1542,7 +1653,11 @@
         
         // Load controller tasks
         async function loadTasks() {
-            const response = await fetch('/visualizer/tasks');
+            if (!selectedCluster) {
+                console.warn('No cluster selected');
+                return;
+            }
+             const response = await fetch(`/visualizer/${selectedCluster}/tasks`);
             const tasks = await response.json();
             
             const container = document.getElementById('tasks-list');
@@ -1576,7 +1691,11 @@
         
                          // Load coordinator group routing states
          async function loadCoordinatorStates() {
-             const response = await fetch('/visualizer/coordinator-states');
+            if (!selectedCluster) {
+                console.warn('No cluster selected');
+                return;
+            }
+             const response = await fetch(`/visualizer/${selectedCluster}/coordinator-states`);
              const data = await response.json();
 
              const container = document.getElementById('coordinator-states-container');
@@ -1738,7 +1857,11 @@
         // Load search unit detail
         async function loadSearchUnitDetail(unitName) {
             try {
-                const response = await fetch(`/visualizer/search-unit/${unitName}`);
+                if (!selectedCluster) {
+                    console.warn('No cluster selected');
+                    return;
+                }
+                const response = await fetch(`/visualizer/${selectedCluster}/search-unit/${unitName}`);
                 const detail = await response.json();
                 
                 // Create a proper modal dialog
@@ -1915,7 +2038,11 @@
         // Load index detail
         async function loadIndexDetail(indexName) {
             try {
-                const response = await fetch(`/visualizer/index/${indexName}`);
+                if (!selectedCluster) {
+                    console.warn('No cluster selected');
+                    return;
+                }
+                const response = await fetch(`/visualizer/${selectedCluster}/index/${indexName}`);
                 const detail = await response.json();
                 
                 // Create modal or detailed view
@@ -2075,6 +2202,5 @@
             loadTabData('overview');
         });
     </script>
-    <script src="allocation-fix.js"></script>
 </body>
 </html> 

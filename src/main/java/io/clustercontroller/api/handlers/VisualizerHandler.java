@@ -14,7 +14,7 @@ import java.util.stream.Collectors;
 
 /**
  * REST controller providing visualizer endpoints for the cluster dashboard.
- * Simplified version adapted for cluster-controller's model structure.
+ * Multi-cluster aware - accepts clusterId as path parameter.
  */
 @RestController
 @RequestMapping("/visualizer")
@@ -23,18 +23,37 @@ public class VisualizerHandler {
     
     private static final Logger logger = LoggerFactory.getLogger(VisualizerHandler.class);
     private final MetadataStore metadataStore;
-    private final String clusterId;
+    private final String defaultClusterId;
     
     public VisualizerHandler(MetadataStore metadataStore, io.clustercontroller.config.ClusterControllerConfig config) {
         this.metadataStore = metadataStore;
-        this.clusterId = config.getClusterName();
+        this.defaultClusterId = config.getClusterName();
+    }
+    
+    /**
+     * Get all available clusters
+     */
+    @GetMapping("/clusters")
+    public ClusterList getClusters() {
+        try {
+            ClusterList result = new ClusterList();
+            result.clusters = metadataStore.getAllClusters();
+            result.defaultCluster = defaultClusterId;
+            return result;
+        } catch (Exception e) {
+            logger.error("Error getting clusters: {}", e.getMessage(), e);
+            ClusterList errorResult = new ClusterList();
+            errorResult.clusters = List.of(defaultClusterId);
+            errorResult.defaultCluster = defaultClusterId;
+            return errorResult;
+        }
     }
     
     /**
      * Get complete cluster overview
      */
-    @GetMapping("/cluster")
-    public ClusterOverview getClusterOverview() {
+    @GetMapping("/{clusterId}/cluster")
+    public ClusterOverview getClusterOverview(@PathVariable("clusterId") String clusterId) {
         try {
             ClusterOverview overview = new ClusterOverview();
             overview.clusterName = clusterId;
@@ -71,8 +90,8 @@ public class VisualizerHandler {
     /**
      * Get allocation matrix
      */
-    @GetMapping("/allocation-matrix")
-    public AllocationMatrix getAllocationMatrix() {
+    @GetMapping("/{clusterId}/allocation-matrix")
+    public AllocationMatrix getAllocationMatrix(@PathVariable("clusterId") String clusterId) {
         try {
             AllocationMatrix matrix = new AllocationMatrix();
             
@@ -135,8 +154,10 @@ public class VisualizerHandler {
     /**
      * Get search unit detail
      */
-    @GetMapping("/search-unit/{unitName}")
-    public SearchUnitDetail getSearchUnitDetail(@PathVariable("unitName") String unitName) {
+    @GetMapping("/{clusterId}/search-unit/{unitName}")
+    public SearchUnitDetail getSearchUnitDetail(
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("unitName") String unitName) {
         try {
             SearchUnitDetail detail = new SearchUnitDetail();
             detail.name = unitName;
@@ -177,8 +198,10 @@ public class VisualizerHandler {
     /**
      * Get index detail
      */
-    @GetMapping("/index/{indexName}")
-    public IndexDetail getIndexDetail(@PathVariable("indexName") String indexName) {
+    @GetMapping("/{clusterId}/index/{indexName}")
+    public IndexDetail getIndexDetail(
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("indexName") String indexName) {
         try {
             IndexDetail detail = new IndexDetail();
             detail.name = indexName;
@@ -239,8 +262,8 @@ public class VisualizerHandler {
     /**
      * Get controller tasks
      */
-    @GetMapping("/tasks")
-    public List<TaskView> getTasks() {
+    @GetMapping("/{clusterId}/tasks")
+    public List<TaskView> getTasks(@PathVariable("clusterId") String clusterId) {
         try {
             List<TaskMetadata> tasks = metadataStore.getAllTasks(clusterId);
             
@@ -315,6 +338,15 @@ public class VisualizerHandler {
     }
     
     // View models
+    
+    @Data
+    public static class ClusterList {
+        @JsonProperty("clusters")
+        public List<String> clusters;
+        
+        @JsonProperty("default_cluster")
+        public String defaultCluster;
+    }
     
     @Data
     public static class ClusterOverview {

@@ -860,4 +860,41 @@ public class EtcdMetadataStore implements MetadataStore {
         }
     }
     
+    @Override
+    public List<String> getAllClusters() throws Exception {
+        log.debug("Discovering all clusters from etcd");
+        
+        try {
+            // Get all keys from etcd root
+            ByteSequence rootPrefix = ByteSequence.from("/", UTF_8);
+            GetOption option = GetOption.newBuilder()
+                .withPrefix(rootPrefix)
+                .withKeysOnly(true)
+                .build();
+            
+            GetResponse response = kvClient.get(rootPrefix, option)
+                .get(ETCD_OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            
+            // Extract unique cluster names from key prefixes
+            // Keys are formatted like: /<cluster-name>/...
+            Set<String> clusterNames = new HashSet<>();
+            for (KeyValue kv : response.getKvs()) {
+                String key = kv.getKey().toString(UTF_8);
+                // Split by "/" and get the first segment (cluster name)
+                String[] parts = key.split("/");
+                if (parts.length >= 2 && !parts[1].isEmpty()) {
+                    clusterNames.add(parts[1]);
+                }
+            }
+            
+            List<String> clusters = new ArrayList<>(clusterNames);
+            log.info("Discovered {} clusters from etcd: {}", clusters.size(), clusters);
+            return clusters;
+            
+        } catch (Exception e) {
+            log.error("Failed to discover clusters from etcd: {}", e.getMessage(), e);
+            throw new Exception("Failed to discover clusters from etcd", e);
+        }
+    }
+    
 }
