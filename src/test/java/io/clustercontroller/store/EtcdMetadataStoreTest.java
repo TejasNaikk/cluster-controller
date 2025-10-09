@@ -795,11 +795,11 @@ public class EtcdMetadataStoreTest {
         // Mock path resolver
         EtcdPathResolver mockPathResolver = mock(EtcdPathResolver.class);
         when(mockPathResolver.getSearchUnitGoalStatePath(clusterId, unitName))
-            .thenReturn("/test-cluster/search-units/test-node/goal-state");
+            .thenReturn("/test-cluster/search-unit/test-node/goal-state");
         setPrivateField(store, "pathResolver", mockPathResolver);
 
         // Simulate concurrent modification scenario
-        ByteSequence keyBytes = ByteSequence.from("/test-cluster/search-units/test-node/goal-state", UTF_8);
+        ByteSequence keyBytes = ByteSequence.from("/test-cluster/search-unit/test-node/goal-state", UTF_8);
         
         // First call: GET returns current revision
         GetResponse getResponse = mock(GetResponse.class);
@@ -855,10 +855,10 @@ public class EtcdMetadataStoreTest {
         // Mock path resolver
         EtcdPathResolver mockPathResolver = mock(EtcdPathResolver.class);
         when(mockPathResolver.getSearchUnitGoalStatePath(clusterId, unitName))
-            .thenReturn("/test-cluster/search-units/test-node/goal-state");
+            .thenReturn("/test-cluster/search-unit/test-node/goal-state");
         setPrivateField(store, "pathResolver", mockPathResolver);
 
-        ByteSequence keyBytes = ByteSequence.from("/test-cluster/search-units/test-node/goal-state", UTF_8);
+        ByteSequence keyBytes = ByteSequence.from("/test-cluster/search-unit/test-node/goal-state", UTF_8);
         
         // First call: GET returns current revision
         GetResponse getResponse = mock(GetResponse.class);
