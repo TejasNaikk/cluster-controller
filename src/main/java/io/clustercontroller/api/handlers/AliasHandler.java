@@ -42,9 +42,9 @@ public class AliasHandler {
      */
     @PutMapping("/{index}/_alias/{alias}")
     public ResponseEntity<Object> createAlias(
-            @PathVariable String clusterId,
-            @PathVariable String index, 
-            @PathVariable String alias, 
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("index") String index, 
+            @PathVariable("alias") String alias, 
             @RequestBody(required = false) AliasRequest request) {
         try {
             log.info("Creating alias '{}' for index '{}' in cluster '{}'", alias, index, clusterId);
@@ -70,9 +70,9 @@ public class AliasHandler {
      */
     @DeleteMapping("/{index}/_alias/{alias}")
     public ResponseEntity<Object> deleteAlias(
-            @PathVariable String clusterId,
-            @PathVariable String index, 
-            @PathVariable String alias) {
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("index") String index, 
+            @PathVariable("alias") String alias) {
         try {
             log.info("Deleting alias '{}' from index '{}' in cluster '{}'", alias, index, clusterId);
             aliasManager.deleteAlias(clusterId, alias, index);
@@ -96,8 +96,8 @@ public class AliasHandler {
      */
     @GetMapping("/_alias/{alias}")
     public ResponseEntity<Object> getAlias(
-            @PathVariable String clusterId,
-            @PathVariable String alias) {
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("alias") String alias) {
         try {
             log.info("Getting alias information for '{}' from cluster '{}'", alias, clusterId);
             String aliasInfo = aliasManager.getAlias(clusterId, alias);
@@ -117,8 +117,8 @@ public class AliasHandler {
      */
     @GetMapping("/{index}/_alias")
     public ResponseEntity<Object> getIndexAliases(
-            @PathVariable String clusterId,
-            @PathVariable String index) {
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("index") String index) {
         try {
             log.info("Getting all aliases for index '{}' from cluster '{}'", index, clusterId);
             String aliasInfo = aliasManager.getAlias(clusterId, index);

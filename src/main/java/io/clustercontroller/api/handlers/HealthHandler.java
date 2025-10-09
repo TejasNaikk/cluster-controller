@@ -42,7 +42,7 @@ public class HealthHandler {
      */
     @GetMapping("/health")
     public ResponseEntity<Object> getClusterHealth(
-            @PathVariable String clusterId,
+            @PathVariable("clusterId") String clusterId,
             @RequestParam(value = "level", defaultValue = "cluster") String level) {
         try {
             log.info("Getting cluster health for cluster '{}' with level: {}", clusterId, level);
@@ -62,8 +62,8 @@ public class HealthHandler {
      */
     @GetMapping("/health/{index}")
     public ResponseEntity<Object> getIndexHealth(
-            @PathVariable String clusterId,
-            @PathVariable String index) {
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("index") String index) {
         try {
             log.info("Getting health for index '{}' in cluster '{}'", index, clusterId);
             String healthJson = healthManager.getIndexHealth(clusterId, index, "indices");
@@ -81,7 +81,7 @@ public class HealthHandler {
      * GET /{clusterId}/_cluster/stats
      */
     @GetMapping("/stats")
-    public ResponseEntity<Object> getClusterStats(@PathVariable String clusterId) {
+    public ResponseEntity<Object> getClusterStats(@PathVariable("clusterId") String clusterId) {
         try {
             log.info("Getting cluster statistics for cluster '{}'", clusterId);
             String statsJson = healthManager.getClusterStats(clusterId);

@@ -42,8 +42,8 @@ public class TemplateHandler {
      */
     @PutMapping("/{name}")
     public ResponseEntity<Object> createTemplate(
-            @PathVariable String clusterId,
-            @PathVariable String name, 
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("name") String name, 
             @RequestBody TemplateRequest request) {
         try {
             log.info("Creating index template '{}' in cluster '{}'", name, clusterId);
@@ -68,8 +68,8 @@ public class TemplateHandler {
      */
     @GetMapping("/{name}")
     public ResponseEntity<Object> getTemplate(
-            @PathVariable String clusterId,
-            @PathVariable String name) {
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("name") String name) {
         try {
             log.info("Getting index template '{}' from cluster '{}'", name, clusterId);
             String templateInfo = templateManager.getTemplate(clusterId, name);
@@ -89,8 +89,8 @@ public class TemplateHandler {
      */
     @DeleteMapping("/{name}")
     public ResponseEntity<Object> deleteTemplate(
-            @PathVariable String clusterId,
-            @PathVariable String name) {
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("name") String name) {
         try {
             log.info("Deleting index template '{}' from cluster '{}'", name, clusterId);
             templateManager.deleteTemplate(clusterId, name);
@@ -112,7 +112,7 @@ public class TemplateHandler {
      * GET /{clusterId}/_index_template
      */
     @GetMapping
-    public ResponseEntity<Object> getAllTemplates(@PathVariable String clusterId) {
+    public ResponseEntity<Object> getAllTemplates(@PathVariable("clusterId") String clusterId) {
         try {
             log.info("Getting all index templates from cluster '{}'", clusterId);
             String templatesInfo = templateManager.getAllTemplates(clusterId);

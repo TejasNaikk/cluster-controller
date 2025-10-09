@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenSearch Cluster Visualizer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 1.8rem;
+        }
+        
+        .nav-tabs {
+            display: flex;
+            background: white;
+            border-bottom: 1px solid #e1e5e9;
+            padding: 0 2rem;
+        }
+        
+        .nav-tab {
+            padding: 1rem 1.5rem;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+        
+        .nav-tab:hover {
+            background: #f8f9fa;
+        }
+        
+        .nav-tab.active {
+            border-bottom-color: #667eea;
+            background: #f8f9fa;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-left: 4px solid #667eea;
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            color: #6c757d;
+            margin-top: 0.5rem;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            transition: transform 0.2s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #e1e5e9;
+        }
+        
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        
+        .status-green {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-yellow {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-red {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-normal {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .status-drain {
+            background: #f0f0f0;
+            color: #6c757d;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #f8f9fa;
+        }
+        
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        
+        .detail-label {
+            font-weight: 500;
+            color: #6c757d;
+        }
+        
+        .detail-value {
+            font-family: monospace;
+            background: #f8f9fa;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+        }
+        
+        .shard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+            gap: 0.5rem;
+            margin: 1rem 0;
+        }
+        
+        .shard-box {
+            padding: 0.5rem;
+            text-align: center;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        
+        .shard-ingest {
+            background: #e3f2fd;
+            border: 2px solid #2196f3;
+            color: #1976d2;
+        }
+        
+        .shard-search {
+            background: #f3e5f5;
+            border: 2px solid #9c27b0;
+            color: #7b1fa2;
+        }
+        
+        .shard-both {
+            background: #e8f5e8;
+            border: 2px solid #4caf50;
+            color: #388e3c;
+        }
+        
+        .allocation-matrix {
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        
+        .matrix-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 800px;
+        }
+        
+        .matrix-table th,
+        .matrix-table td {
+            padding: 0.75rem;
+            text-align: center;
+            border: 1px solid #e1e5e9;
+        }
+        
+        .matrix-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        
+        .matrix-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        
+        .matrix-cell {
+            font-size: 0.8rem;
+        }
+        
+        .matrix-shard {
+            display: inline-block;
+            margin: 0.1rem;
+            padding: 0.2rem 0.4rem;
+            background: #e3f2fd;
+            border-radius: 4px;
+            font-size: 0.7rem;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #6c757d;
+        }
+        
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 1rem;
+            border-radius: 6px;
+            margin: 1rem 0;
+        }
+        
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+        
+        .refresh-btn:hover {
+            background: #5a6fd8;
+        }
+        
+        .convergence-status {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .convergence-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+        }
+        
+        .converged {
+            background: #4caf50;
+        }
+        
+        .not-converged {
+            background: #f44336;
+        }
+        
+        .task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .task-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .task-priority {
+            font-weight: bold;
+            color: #667eea;
+            min-width: 40px;
+        }
+        
+        .search-box {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #e1e5e9;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            font-size: 1rem;
+        }
+        
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-left: auto;
+        }
+        
+        .auto-refresh input[type="checkbox"] {
+            transform: scale(1.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔍 OpenSearch Cluster Visualizer</h1>
+        <div class="auto-refresh">
+            <input type="checkbox" id="autoRefresh">
+            <label for="autoRefresh">Auto-refresh (5s)</label>
+            <button class="refresh-btn" onclick="refreshCurrentTab()">Refresh</button>
+        </div>
+    </div>
+    
+    <div class="nav-tabs">
+        <div class="nav-tab active" onclick="showTab('overview')">Cluster Overview</div>
+        <div class="nav-tab" onclick="showTab('search-units')">Search Units</div>
+        <div class="nav-tab" onclick="showTab('indices')">Indices</div>
+        <div class="nav-tab" onclick="showTab('allocation-matrix')">Allocation Matrix</div>
+        <div class="nav-tab" onclick="showTab('tasks')">Controller Tasks</div>
+    </div>
+    
+    <div class="container">
+        <!-- Overview Tab -->
+        <div id="overview" class="tab-content active">
+            <div class="stats-grid" id="cluster-stats">
+                <div class="loading">Loading cluster statistics...</div>
+            </div>
+            
+            <div class="grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Search Units Overview</div>
+                    </div>
+                    <div id="search-units-overview">
+                        <div class="loading">Loading search units...</div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Indices Overview</div>
+                    </div>
+                    <div id="indices-overview">
+                        <div class="loading">Loading indices...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Search Units Tab -->
+        <div id="search-units" class="tab-content">
+            <input type="text" class="search-box" placeholder="Search search units..." onkeyup="filterSearchUnits(this.value)">
+            <div class="grid" id="search-units-grid">
+                <div class="loading">Loading search units...</div>
+            </div>
+        </div>
+        
+        <!-- Indices Tab -->
+        <div id="indices" class="tab-content">
+            <input type="text" class="search-box" placeholder="Search indices..." onkeyup="filterIndices(this.value)">
+            <div class="grid" id="indices-grid">
+                <div class="loading">Loading indices...</div>
+            </div>
+        </div>
+        
+        <!-- Allocation Matrix Tab -->
+        <div id="allocation-matrix" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">Shard Allocation Matrix</div>
+                </div>
+                <div class="allocation-matrix" id="allocation-matrix-content">
+                    <div class="loading">Loading allocation matrix...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tasks Tab -->
+        <div id="tasks" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">Controller Tasks</div>
+                </div>
+                <div id="tasks-list">
+                    <div class="loading">Loading controller tasks...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentTab = 'overview';
+        let autoRefreshInterval = null;
+        let clusterData = {};
+        
+        // Tab management
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Remove active from nav tabs
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            
+            // Add active to nav tab
+            event.target.classList.add('active');
+            
+            currentTab = tabName;
+            
+            // Load data for this tab
+            loadTabData(tabName);
+        }
+        
+        // Load data for specific tab
+        async function loadTabData(tabName) {
+            try {
+                switch(tabName) {
+                    case 'overview':
+                        await loadClusterOverview();
+                        break;
+                    case 'search-units':
+                        await loadSearchUnitsGrid();
+                        break;
+                    case 'indices':
+                        await loadIndicesGrid();
+                        break;
+                    case 'allocation-matrix':
+                        await loadAllocationMatrix();
+                        break;
+                    case 'tasks':
+                        await loadTasks();
+                        break;
+                }
+            } catch (error) {
+                console.error(`Error loading ${tabName}:`, error);
+                showError(`Failed to load ${tabName}: ${error.message}`);
+            }
+        }
+        
+        // Load cluster overview
+        async function loadClusterOverview() {
+            const response = await fetch('/visualizer/cluster');
+            const data = await response.json();
+            clusterData = data;
+            
+            // Render cluster stats
+            renderClusterStats(data.stats);
+            
+            // Render overview grids
+            renderSearchUnitsOverview(data.search_units);
+            renderIndicesOverview(data.indices);
+        }
+        
+        // Render cluster statistics
+        function renderClusterStats(stats) {
+            const container = document.getElementById('cluster-stats');
+            container.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-value">${stats.total_search_units}</div>
+                    <div class="stat-label">Search Units</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${stats.total_indices}</div>
+                    <div class="stat-label">Indices</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${stats.total_shards}</div>
+                    <div class="stat-label">Total Shards</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${stats.search_units_by_state?.NORMAL || 0}</div>
+                    <div class="stat-label">Normal Units</div>
+                </div>
+            `;
+        }
+        
+        // Render search units overview
+        function renderSearchUnitsOverview(searchUnits) {
+            const container = document.getElementById('search-units-overview');
+            if (!searchUnits || searchUnits.length === 0) {
+                container.innerHTML = '<div class="detail-row">No search units found</div>';
+                return;
+            }
+            
+            let html = '';
+            searchUnits.slice(0, 5).forEach(unit => {
+                const statusClass = getStatusClass(unit.state_admin);
+                const nodeStatusClass = getStatusClass(unit.node_state);
+                
+                html += `
+                    <div class="detail-row">
+                        <div>
+                            <strong>${unit.name}</strong>
+                            <div style="font-size: 0.8rem; color: #6c757d;">
+                                ${unit.role} • ${unit.host}
+                            </div>
+                        </div>
+                        <div>
+                            <div class="status-badge ${statusClass}">${unit.state_admin}</div>
+                            <div class="status-badge ${nodeStatusClass}">${unit.node_state || 'Unknown'}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            if (searchUnits.length > 5) {
+                html += `<div class="detail-row"><em>... and ${searchUnits.length - 5} more</em></div>`;
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        // Render indices overview
+        function renderIndicesOverview(indices) {
+            const container = document.getElementById('indices-overview');
+            if (!indices || indices.length === 0) {
+                container.innerHTML = '<div class="detail-row">No indices found</div>';
+                return;
+            }
+            
+            let html = '';
+            indices.slice(0, 5).forEach(index => {
+                const healthClass = getStatusClass(index.health);
+                
+                html += `
+                    <div class="detail-row">
+                        <div>
+                            <strong>${index.name}</strong>
+                            <div style="font-size: 0.8rem; color: #6c757d;">
+                                ${index.shard_count} shards • ${index.allocated_shards} allocated
+                            </div>
+                        </div>
+                        <div class="status-badge ${healthClass}">${index.health}</div>
+                    </div>
+                `;
+            });
+            
+            if (indices.length > 5) {
+                html += `<div class="detail-row"><em>... and ${indices.length - 5} more</em></div>`;
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        // Load search units grid
+        async function loadSearchUnitsGrid() {
+            if (!clusterData.search_units) {
+                await loadClusterOverview();
+            }
+            
+            const container = document.getElementById('search-units-grid');
+            const searchUnits = clusterData.search_units || [];
+            
+            let html = '';
+            for (const unit of searchUnits) {
+                const statusClass = getStatusClass(unit.state_admin);
+                const nodeStatusClass = getStatusClass(unit.node_state);
+                
+                html += `
+                    <div class="card" data-name="${unit.name.toLowerCase()}">
+                        <div class="card-header">
+                            <div class="card-title">${unit.name}</div>
+                            <div class="status-badge ${statusClass}">${unit.state_admin}</div>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Host:</span>
+                            <span class="detail-value">${unit.host}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Role:</span>
+                            <span class="detail-value">${unit.role}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Node State:</span>
+                            <span class="status-badge ${nodeStatusClass}">${unit.node_state || 'Unknown'}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Indices:</span>
+                            <span class="detail-value">${unit.index_count || 0}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Shards:</span>
+                            <span class="detail-value">${unit.shard_count || 0}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Ports:</span>
+                            <span class="detail-value">${formatPorts(unit.ports)}</span>
+                        </div>
+                        <button class="refresh-btn" onclick="loadSearchUnitDetail('${unit.name}')" style="margin-top: 1rem; width: 100%;">
+                            View Details
+                        </button>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html || '<div class="loading">No search units found</div>';
+        }
+        
+        // Load indices grid
+        async function loadIndicesGrid() {
+            if (!clusterData.indices) {
+                await loadClusterOverview();
+            }
+            
+            const container = document.getElementById('indices-grid');
+            const indices = clusterData.indices || [];
+            
+            let html = '';
+            for (const index of indices) {
+                const healthClass = getStatusClass(index.health);
+                
+                html += `
+                    <div class="card" data-name="${index.name.toLowerCase()}">
+                        <div class="card-header">
+                            <div class="card-title">${index.name}</div>
+                            <div class="status-badge ${healthClass}">${index.health}</div>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Shards:</span>
+                            <span class="detail-value">${index.shard_count}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Allocated:</span>
+                            <span class="detail-value">${index.allocated_shards}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Replica Count:</span>
+                            <span class="detail-value">[${(index.shard_replica_count || []).join(', ')}]</span>
+                        </div>
+                        <button class="refresh-btn" onclick="loadIndexDetail('${index.name}')" style="margin-top: 1rem; width: 100%;">
+                            View Details
+                        </button>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html || '<div class="loading">No indices found</div>';
+        }
+        
+        // Load allocation matrix
+        async function loadAllocationMatrix() {
+            const response = await fetch('/visualizer/allocation-matrix');
+            const data = await response.json();
+            
+            const container = document.getElementById('allocation-matrix-content');
+            
+            if (!data.search_units || !data.indices || data.search_units.length === 0 || data.indices.length === 0) {
+                container.innerHTML = '<div class="loading">No allocation data available</div>';
+                return;
+            }
+            
+            let html = `
+                <table class="matrix-table">
+                    <thead>
+                        <tr>
+                            <th>Index / Search Unit</th>
+                            ${data.search_units.map(unit => `<th>${unit}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            data.indices.forEach(indexName => {
+                html += `<tr><td><strong>${indexName}</strong></td>`;
+                
+                data.search_units.forEach(unitName => {
+                    const shards = data.allocations[indexName]?.[unitName] || [];
+                    const cellContent = shards.map(shard => 
+                        `<span class="matrix-shard">${shard}</span>`
+                    ).join('');
+                    
+                    html += `<td class="matrix-cell">${cellContent}</td>`;
+                });
+                
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+        
+        // Load controller tasks
+        async function loadTasks() {
+            const response = await fetch('/visualizer/tasks');
+            const tasks = await response.json();
+            
+            const container = document.getElementById('tasks-list');
+            
+            if (!tasks || tasks.length === 0) {
+                container.innerHTML = '<div class="loading">No tasks found</div>';
+                return;
+            }
+            
+            let html = '<div class="task-list">';
+            tasks.forEach(task => {
+                const statusClass = getStatusClass(task.status);
+                
+                html += `
+                    <div class="task-item">
+                        <div class="task-priority">${task.priority}</div>
+                        <div style="flex: 1;">
+                            <strong>${task.name}</strong>
+                            <div style="font-size: 0.8rem; color: #6c757d;">
+                                ${task.schedule} • Last: ${task.last_updated || 'Never'}
+                            </div>
+                        </div>
+                        <div class="status-badge ${statusClass}">${task.status}</div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            
+            container.innerHTML = html;
+        }
+        
+        // Load search unit detail
+        async function loadSearchUnitDetail(unitName) {
+            try {
+                const response = await fetch(`/visualizer/search-unit/${unitName}`);
+                const detail = await response.json();
+                
+                // Create modal or detailed view
+                alert(`Search Unit: ${unitName}\n\nGoal State:\n${JSON.stringify(detail.goal_state, null, 2)}\n\nActual State:\n${JSON.stringify(detail.actual_state, null, 2)}\n\nConvergence: ${detail.convergence_status?.converged ? 'Converged' : 'Not Converged'}`);
+            } catch (error) {
+                console.error('Error loading search unit detail:', error);
+                alert(`Error loading details for ${unitName}: ${error.message}`);
+            }
+        }
+        
+        // Load index detail
+        async function loadIndexDetail(indexName) {
+            try {
+                const response = await fetch(`/visualizer/index/${indexName}`);
+                const detail = await response.json();
+                
+                // Create modal or detailed view
+                alert(`Index: ${indexName}\n\nShards: ${detail.shard_details?.length || 0}\n\nPlanned Allocations: ${detail.planned_allocations?.length || 0}\n\nActual Allocations: ${detail.actual_allocations?.length || 0}`);
+            } catch (error) {
+                console.error('Error loading index detail:', error);
+                alert(`Error loading details for ${indexName}: ${error.message}`);
+            }
+        }
+        
+        // Filter functions
+        function filterSearchUnits(query) {
+            const cards = document.querySelectorAll('#search-units-grid .card');
+            cards.forEach(card => {
+                const name = card.getAttribute('data-name');
+                card.style.display = name.includes(query.toLowerCase()) ? 'block' : 'none';
+            });
+        }
+        
+        function filterIndices(query) {
+            const cards = document.querySelectorAll('#indices-grid .card');
+            cards.forEach(card => {
+                const name = card.getAttribute('data-name');
+                card.style.display = name.includes(query.toLowerCase()) ? 'block' : 'none';
+            });
+        }
+        
+        // Utility functions
+        function getStatusClass(status) {
+            if (!status) return 'status-red';
+            
+            const statusUpper = status.toUpperCase();
+            switch(statusUpper) {
+                case 'GREEN':
+                case 'NORMAL':
+                case 'COMPLETED':
+                    return 'status-green';
+                case 'YELLOW':
+                case 'RUNNING':
+                    return 'status-yellow';
+                case 'RED':
+                case 'FAILED':
+                    return 'status-red';
+                case 'DRAIN':
+                    return 'status-drain';
+                default:
+                    return 'status-normal';
+            }
+        }
+        
+        function formatPorts(ports) {
+            if (!ports) return 'N/A';
+            if (typeof ports === 'object' && ports.http !== undefined && ports.transport !== undefined) {
+                return `http:${ports.http}, transport:${ports.transport}`;
+            }
+            if (typeof ports === 'object') {
+                return Object.entries(ports).map(([key, value]) => `${key}:${value}`).join(', ');
+            }
+            return 'N/A';
+        }
+        
+        function showError(message) {
+            const container = document.querySelector('.container');
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.textContent = message;
+            container.insertBefore(errorDiv, container.firstChild);
+            
+            setTimeout(() => {
+                errorDiv.remove();
+            }, 5000);
+        }
+        
+        function refreshCurrentTab() {
+            loadTabData(currentTab);
+        }
+        
+        // Auto-refresh functionality
+        document.getElementById('autoRefresh').addEventListener('change', function() {
+            if (this.checked) {
+                autoRefreshInterval = setInterval(() => {
+                    refreshCurrentTab();
+                }, 5000);
+            } else {
+                if (autoRefreshInterval) {
+                    clearInterval(autoRefreshInterval);
+                    autoRefreshInterval = null;
+                }
+            }
+        });
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadTabData('overview');
+        });
+    </script>
+</body>
+</html> 

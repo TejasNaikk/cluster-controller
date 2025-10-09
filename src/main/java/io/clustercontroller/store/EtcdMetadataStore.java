@@ -801,9 +801,42 @@ public class EtcdMetadataStore implements MetadataStore {
             throw e;
         }
     }
-
-
-
+    
+    @Override
+    public ShardAllocation getActualAllocation(String clusterId, String indexName, String shardId) throws Exception {
+        String path = pathResolver.getShardActualAllocationPath(clusterId, indexName, shardId);
+        
+        try {
+            ByteSequence key = ByteSequence.from(path, UTF_8);
+            GetResponse response = kvClient.get(key).get(ETCD_OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            
+            if (response.getKvs().isEmpty()) {
+                return null; // No actual allocation exists
+            }
+            
+            String json = response.getKvs().get(0).getValue().toString(UTF_8);
+            return objectMapper.readValue(json, ShardAllocation.class);
+            
+        } catch (Exception e) {
+            log.error("Failed to get actual allocation for shard {}/{}: {}", indexName, shardId, e.getMessage(), e);
+            throw e;
+        }
+    }
+    
+    @Override
+    public void setActualAllocation(String clusterId, String indexName, String shardId, ShardAllocation allocation) throws Exception {
+        String path = pathResolver.getShardActualAllocationPath(clusterId, indexName, shardId);
+        
+        try {
+            String json = objectMapper.writeValueAsString(allocation);
+            executeEtcdPut(path, json);
+            log.debug("Set actual allocation for shard {}/{}: {}", indexName, shardId, allocation);
+            
+        } catch (Exception e) {
+            log.error("Failed to set actual allocation for shard {}/{}: {}", indexName, shardId, e.getMessage(), e);
+            throw e;
+        }
+    }
 
     @Override
     public void deletePrefix(String clusterId, String prefix) throws Exception {

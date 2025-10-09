@@ -171,6 +171,16 @@ public interface MetadataStore {
      */
     void setPlannedAllocation(String clusterId, String indexName, String shardId, ShardAllocation allocation) throws Exception;
     
+    /**
+     * Get actual allocation for a specific shard
+     */
+    ShardAllocation getActualAllocation(String clusterId, String indexName, String shardId) throws Exception;
+    
+    /**
+     * Set actual allocation for a specific shard
+     */
+    void setActualAllocation(String clusterId, String indexName, String shardId, ShardAllocation allocation) throws Exception;
+    
     // =================================================================
     // CLUSTER OPERATIONS
     // =================================================================

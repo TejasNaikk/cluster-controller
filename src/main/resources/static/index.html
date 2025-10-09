@@ -1,0 +1,2080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Native Opensearch Controller</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 1.8rem;
+        }
+        
+        .header .cluster-info {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-top: 0.25rem;
+        }
+        
+        .nav-tabs {
+            display: flex;
+            background: white;
+            border-bottom: 1px solid #e1e5e9;
+            padding: 0 2rem;
+            align-items: center;
+        }
+        
+        .cluster-badge {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-right: 1rem;
+            border: 1px solid #bbdefb;
+        }
+        
+        .nav-tab {
+            padding: 1rem 1.5rem;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+        
+        .nav-tab:hover {
+            background: #f8f9fa;
+        }
+        
+        .nav-tab.active {
+            border-bottom-color: #667eea;
+            background: #f8f9fa;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-left: 4px solid #667eea;
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            color: #6c757d;
+            margin-top: 0.5rem;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            transition: transform 0.2s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #e1e5e9;
+        }
+        
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        
+        .status-green {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-yellow {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-red {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-normal {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .status-drain {
+            background: #f0f0f0;
+            color: #6c757d;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #f8f9fa;
+        }
+        
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        
+        .detail-label {
+            font-weight: 500;
+            color: #6c757d;
+        }
+        
+        .detail-value {
+            font-family: monospace;
+            background: #f8f9fa;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+        }
+        
+        .shard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+            gap: 0.5rem;
+            margin: 1rem 0;
+        }
+        
+        .shard-box {
+            padding: 0.5rem;
+            text-align: center;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        
+        .shard-ingest {
+            background: #e3f2fd;
+            border: 2px solid #2196f3;
+            color: #1976d2;
+        }
+        
+        .shard-search {
+            background: #f3e5f5;
+            border: 2px solid #9c27b0;
+            color: #7b1fa2;
+        }
+        
+        .shard-both {
+            background: #e8f5e8;
+            border: 2px solid #4caf50;
+            color: #388e3c;
+        }
+        
+        .allocation-matrix {
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        
+        .matrix-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 800px;
+        }
+        
+        .matrix-table th,
+        .matrix-table td {
+            padding: 0.75rem;
+            text-align: center;
+            border: 1px solid #e1e5e9;
+        }
+        
+        .matrix-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        
+        .matrix-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        
+        .matrix-cell {
+            font-size: 0.8rem;
+        }
+        
+        .matrix-shard {
+            display: inline-block;
+            margin: 0.1rem;
+            padding: 0.2rem 0.4rem;
+            background: #e3f2fd;
+            border-radius: 4px;
+            font-size: 0.7rem;
+        }
+        
+        .matrix-shard-goal {
+            background: #2196F3; /* Blue for goal state */
+            color: white;
+        }
+        
+        .matrix-shard-actual {
+            background: #4CAF50; /* Green for actual state */
+            color: white;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #6c757d;
+        }
+        
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 1rem;
+            border-radius: 6px;
+            margin: 1rem 0;
+        }
+        
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+        
+        .refresh-btn:hover {
+            background: #5a6fd8;
+        }
+        
+        .convergence-status {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .convergence-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+        }
+        
+        .converged {
+            background: #4caf50;
+        }
+        
+        .not-converged {
+            background: #f44336;
+        }
+        
+        .task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .task-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .task-priority {
+            font-weight: bold;
+            color: #667eea;
+            min-width: 40px;
+        }
+        
+        .search-box {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #e1e5e9;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            font-size: 1rem;
+        }
+        
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-left: auto;
+        }
+        
+        .auto-refresh input[type="checkbox"] {
+            transform: scale(1.2);
+        }
+        
+        /* Shard Tabs Styling */
+        .shard-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            padding: 1rem;
+        }
+        
+        .shard-tab {
+            padding: 0.5rem 1rem;
+            background: white;
+            border: 1px solid #e1e5e9;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .shard-tab:hover {
+            background: #f0f0f0;
+            border-color: #667eea;
+        }
+        
+        .shard-tab.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        
+        .shard-tab-count {
+            background: rgba(255,255,255,0.2);
+            padding: 0.1rem 0.4rem;
+            border-radius: 10px;
+            font-size: 0.75rem;
+        }
+        
+        .shard-tab.active .shard-tab-count {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            max-width: 80%;
+            max-height: 80%;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #e1e5e9;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8f9fa;
+        }
+        
+        .modal-header h2 {
+            margin: 0;
+            color: #333;
+            font-size: 1.5rem;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 2rem;
+            cursor: pointer;
+            color: #666;
+            padding: 0;
+            width: 2rem;
+            height: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-close:hover {
+            color: #333;
+        }
+        
+        .modal-body {
+            padding: 1.5rem;
+            overflow-y: auto;
+            flex: 1;
+        }
+        
+        .detail-section {
+            margin-bottom: 2rem;
+        }
+        
+        .detail-section h3 {
+            color: #333;
+            margin-bottom: 1rem;
+            font-size: 1.25rem;
+            border-bottom: 2px solid #e1e5e9;
+            padding-bottom: 0.5rem;
+        }
+        
+        .detail-section h4 {
+            color: #555;
+            margin: 1rem 0 0.5rem 0;
+            font-size: 1.1rem;
+        }
+        
+        .detail-section h5 {
+            color: #666;
+            margin: 0.75rem 0 0.5rem 0;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        
+        .convergence-status {
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+        
+        .convergence-status.converged {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .convergence-status.not-converged {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .json-container {
+            background: #f8f9fa;
+            border: 1px solid #e1e5e9;
+            border-radius: 6px;
+            padding: 1rem;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        
+        .metric-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #e1e5e9;
+        }
+        
+        .metric-label {
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .metric-value {
+            color: #333;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .index-routing, .index-goal {
+            margin-bottom: 1.5rem;
+            border: 1px solid #e1e5e9;
+            border-radius: 6px;
+            padding: 1rem;
+            background: white;
+        }
+        
+        .shards-list, .goal-shards {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        
+        .shard-item, .goal-shard {
+            padding: 0.5rem;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            background: #f8f9fa;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 100px;
+        }
+        
+        .shard-item.primary, .goal-shard.primary {
+            background: #e8f5e8;
+            border-color: #4caf50;
+        }
+        
+        .shard-item.replica, .goal-shard.search_replica {
+            background: #e3f2fd;
+            border-color: #2196f3;
+        }
+        
+        .shard-id {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        
+        .shard-role {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 0.25rem;
+        }
+        
+        .shard-state {
+            font-size: 0.75rem;
+            color: #888;
+            margin-top: 0.25rem;
+        }
+        
+        .relocating {
+            background: #fff3cd;
+            color: #856404;
+            padding: 0.125rem 0.25rem;
+            border-radius: 3px;
+            font-size: 0.7rem;
+            margin-top: 0.25rem;
+        }
+        
+        .no-data {
+            color: #888;
+            font-style: italic;
+            padding: 1rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔍 Cloud Native Opensearch Controller</h1>
+        <div class="cluster-info">Cluster: <span id="clusterName">Loading...</span></div>
+        <div class="auto-refresh">
+            <input type="checkbox" id="autoRefresh">
+            <label for="autoRefresh">Auto-refresh (5s)</label>
+            <button class="refresh-btn" onclick="refreshCurrentTab()">Refresh</button>
+        </div>
+    </div>
+    
+    <div class="nav-tabs">
+        <div class="cluster-badge" id="clusterBadge">Cluster Name</div>
+        <div class="nav-tab active" onclick="showTab('overview')">Overview</div>
+        <div class="nav-tab" onclick="showTab('search-units')">Nodes</div>
+        <div class="nav-tab" onclick="showTab('allocation-matrix')">Shard Allocation</div>
+        <div class="nav-tab" onclick="showTab('coordinator-states')">Shard Routing</div>
+        <div class="nav-tab" onclick="showTab('controller-tasks')">Controller Tasks</div>
+    </div>
+    
+    <div class="container">
+        <!-- Overview Tab -->
+        <div id="overview" class="tab-content active">
+            <div class="cluster-summary">
+                <h2>Cluster Status</h2>
+                <div class="stats-grid" id="cluster-stats">
+                    <div class="loading">Loading cluster statistics...</div>
+                </div>
+                
+                <div class="grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Search Units Overview</div>
+                        </div>
+                        <div id="search-units-overview">
+                            <div class="loading">Loading search units...</div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Indices Overview</div>
+                        </div>
+                        <div id="indices-overview">
+                            <div class="loading">Loading indices...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Search Units Tab -->
+        <div id="search-units" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">Search Units (Nodes)</div>
+                </div>
+                
+                <input type="text" class="search-box" placeholder="Search nodes..." onkeyup="filterSearchUnits(this.value)">
+                <div class="grid" id="search-units-grid">
+                    <div class="loading">Loading search units...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Allocation Matrix Tab -->
+        <div id="allocation-matrix" class="tab-content">
+            <div class="view-toggle" style="display: flex; border: 1px solid #ccc; border-radius: 4px; overflow: hidden;">
+                <button id="shard-view-btn" class="view-btn active" onclick="switchAllocationView('shard')"
+                        style="flex: 1; padding: 10px; border: none; background: #007bff; color: white; cursor: pointer;">
+                    Shard-Centric View
+                </button>
+                <button id="unit-view-btn" class="view-btn" onclick="switchAllocationView('unit')"
+                        style="flex: 1; padding: 10px; border: none; background: #f8f9fa; color: #333; cursor: pointer;">
+                    Unit-Centric View
+                </button>
+            </div>
+            <div id="allocation-matrix-container">
+                <div class="loading">Loading allocation matrix...</div>
+            </div>
+        </div>
+        
+        <!-- Shard Routing Tab -->
+        <div id="coordinator-states" class="tab-content">
+            <div class="container" style="max-width: 100%; padding: 0;">
+                <div id="coordinator-states-container">
+                    <div class="loading">Loading shard routing...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tasks Tab -->
+        <div id="controller-tasks" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">Controller Tasks</div>
+                    <div style="font-size: 0.8rem; color: #6c757d; margin-top: 0.25rem;">
+                        Automated cluster management tasks and their status
+                    </div>
+                </div>
+                <div id="tasks-list">
+                    <div class="loading">Loading controller tasks...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentTab = 'overview';
+        let autoRefreshInterval = null;
+        let clusterData = {};
+        
+        // Tab management
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Remove active from nav tabs
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            
+            // Add active to nav tab
+            event.target.classList.add('active');
+            
+            currentTab = tabName;
+            
+            // Load data for this tab
+            loadTabData(tabName);
+        }
+        
+        // Load data for specific tab
+        async function loadTabData(tabName) {
+            try {
+                switch(tabName) {
+                    case 'overview':
+                        await loadClusterOverview();
+                        break;
+                    case 'search-units':
+                        await loadSearchUnitsGrid();
+                        break;
+                    case 'allocation-matrix':
+                        await loadAllocationMatrix();
+                        break;
+                    case 'coordinator-states':
+                        await loadCoordinatorStates();
+                        break;
+                    case 'controller-tasks':
+                        await loadTasks();
+                        break;
+                }
+            } catch (error) {
+                console.error(`Error loading ${tabName}:`, error);
+                showError(`Failed to load ${tabName}: ${error.message}`);
+            }
+        }
+        
+        // Load cluster overview
+        async function loadClusterOverview() {
+            const response = await fetch('/visualizer/cluster');
+            const data = await response.json();
+            clusterData = data;
+            
+            // Update cluster name in header
+            document.getElementById('clusterName').textContent = data.cluster_name || 'N/A';
+            document.getElementById('clusterBadge').textContent = data.cluster_name || 'Cluster Name';
+
+            // Render cluster stats
+            renderClusterStats(data.stats);
+            
+            // Render overview grids
+            renderSearchUnitsOverview(data.search_units);
+            renderIndicesOverview(data.indices);
+        }
+        
+        // Render cluster statistics
+        function renderClusterStats(stats) {
+            const container = document.getElementById('cluster-stats');
+            
+            // Calculate coordinator vs data node counts
+            const searchUnits = clusterData.search_units || [];
+            const dataNodeCount = searchUnits.filter(unit => !isCoordinatorNode(unit)).length;
+            const coordinatorNodeCount = searchUnits.filter(unit => isCoordinatorNode(unit)).length;
+            
+            container.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-value">${dataNodeCount}</div>
+                    <div class="stat-label">Data Nodes</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${coordinatorNodeCount}</div>
+                    <div class="stat-label">Coordinator Nodes</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${stats.total_indices}</div>
+                    <div class="stat-label">Indices</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${stats.total_shards}</div>
+                    <div class="stat-label">Total Shards</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${stats.search_units_by_state?.NORMAL || 0}</div>
+                    <div class="stat-label">Normal Units</div>
+                </div>
+            `;
+        }
+        
+        // Render search units overview
+        function renderSearchUnitsOverview(searchUnits) {
+            const container = document.getElementById('search-units-overview');
+            
+            // Use categorized view if available, fallback to flat list
+            if (clusterData.search_units_by_affinity) {
+                renderCategorizedSearchUnitsOverview(clusterData.search_units_by_affinity);
+                return;
+            }
+            
+            // Fallback to flat list for backward compatibility
+            if (!searchUnits || searchUnits.length === 0) {
+                container.innerHTML = '<div class="detail-row">No search units found</div>';
+                return;
+            }
+            
+            // Separate data nodes from coordinator nodes
+            const dataNodes = searchUnits.filter(unit => !isCoordinatorNode(unit));
+            const coordinatorNodes = searchUnits.filter(unit => isCoordinatorNode(unit));
+            
+            let html = '';
+            
+            // Show data nodes first
+            if (dataNodes.length > 0) {
+                html += `
+                    <div style="margin-bottom: 0.75rem;">
+                        <h4 style="color: #28a745; font-size: 0.9rem; font-weight: 600; margin: 0; padding: 0.5rem 0; border-bottom: 2px solid #28a745;">
+                            📊 Data Cluster (${dataNodes.length} nodes)
+                        </h4>
+                    </div>
+                `;
+                
+                dataNodes.slice(0, 3).forEach(unit => {
+                    const adminStatusClass = getStatusClass(unit.state_admin);
+                    const healthStatusClass = getStatusClass(unit.state_pulled);
+                    
+                    const roleIcon = unit.role === 'primary' ? '👑' : 
+                                   unit.role === 'replica' ? '📋' : 
+                                   unit.role === 'ingest' ? '⬆️' : 
+                                   unit.role === 'search' ? '🔍' : '📦';
+                    
+                    html += `
+                        <div class="detail-row" style="border-left: 3px solid #28a745; padding-left: 1rem;">
+                            <div>
+                                <strong>${unit.name}</strong>
+                                <div style="font-size: 0.8rem; color: #6c757d;">
+                                    ${roleIcon} ${unit.role} • ${unit.host}
+                                </div>
+                            </div>
+                            <div>
+                                <div class="status-badge ${adminStatusClass}">${unit.state_admin}</div>
+                                <div class="status-badge ${healthStatusClass}">${unit.state_pulled || 'Unknown'}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                if (dataNodes.length > 3) {
+                    html += `<div class="detail-row" style="margin-left: 1rem;"><em>... and ${dataNodes.length - 3} more data nodes</em></div>`;
+                }
+            }
+            
+            // Show coordinator nodes separately if any
+            if (coordinatorNodes.length > 0) {
+                html += `
+                    <div style="margin-top: 1rem; margin-bottom: 0.75rem;">
+                        <h4 style="color: #ffc107; font-size: 0.9rem; font-weight: 600; margin: 0; padding: 0.5rem 0; border-bottom: 2px solid #ffc107;">
+                            🎯 Coordinator Cluster (${coordinatorNodes.length} nodes)
+                        </h4>
+                        <p style="color: #856404; font-size: 0.75rem; margin: 0.25rem 0; font-style: italic;">
+                            Coordination only - no data storage
+                        </p>
+                    </div>
+                `;
+                
+                coordinatorNodes.slice(0, 2).forEach(unit => {
+                    const adminStatusClass = getStatusClass(unit.state_admin);
+                    const healthStatusClass = getStatusClass(unit.state_pulled);
+                    
+                    html += `
+                        <div class="detail-row" style="border-left: 3px solid #ffc107; padding-left: 1rem; background: #fff3cd;">
+                            <div>
+                                <strong>${unit.name}</strong>
+                                <div style="font-size: 0.8rem; color: #856404;">
+                                    🔗 ${unit.role} • ${unit.host}
+                                </div>
+                            </div>
+                            <div>
+                                <div class="status-badge ${adminStatusClass}">${unit.state_admin}</div>
+                                <div class="status-badge ${healthStatusClass}">${unit.state_pulled || 'Unknown'}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                if (coordinatorNodes.length > 2) {
+                    html += `<div class="detail-row" style="margin-left: 1rem;"><em>... and ${coordinatorNodes.length - 2} more coordinator nodes</em></div>`;
+                }
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        // Render search units overview with shard categorization
+        function renderCategorizedSearchUnitsOverview(searchUnitsByAffinity) {
+            const container = document.getElementById('search-units-overview');
+            
+            if (!searchUnitsByAffinity || Object.keys(searchUnitsByAffinity).length === 0) {
+                container.innerHTML = '<div class="detail-row">No search units found</div>';
+                return;
+            }
+            
+            let html = '';
+            
+            // First, extract ALL coordinator nodes from all affinity groups
+            // Coordinators should not be grouped by shard affinity since they don't participate in shard allocation
+            const allCoordinators = [];
+            const dataNodesByAffinity = {};
+            
+            Object.keys(searchUnitsByAffinity).forEach(affinityKey => {
+                const units = searchUnitsByAffinity[affinityKey] || [];
+                const coordinators = units.filter(u => isCoordinatorNode(u));
+                const dataNodes = units.filter(u => !isCoordinatorNode(u));
+                
+                // Collect all coordinators
+                allCoordinators.push(...coordinators);
+                
+                // Only keep affinity groups that have data nodes
+                if (dataNodes.length > 0) {
+                    dataNodesByAffinity[affinityKey] = dataNodes;
+                }
+            });
+            
+            // Show coordinator cluster separately (no shard affinity grouping)
+            if (allCoordinators.length > 0) {
+                html += `
+                    <div style="margin-bottom: 1rem;">
+                        <h4 style="color: #ffc107; font-size: 0.9rem; font-weight: 600; margin: 0; padding: 0.5rem 0; border-bottom: 2px solid #ffc107;">
+                            🎯 Coordinator Cluster (${allCoordinators.length} nodes)
+                        </h4>
+                        <p style="color: #856404; font-size: 0.75rem; margin: 0.25rem 0; font-style: italic;">
+                            Coordination only - no shard allocation
+                        </p>
+                    </div>
+                `;
+                
+                // Show first 2 coordinators
+                allCoordinators.slice(0, 2).forEach(unit => {
+                    const adminStatusClass = getStatusClass(unit.state_admin);
+                    const healthStatusClass = getStatusClass(unit.state_pulled);
+                    
+                    html += `
+                        <div class="detail-row" style="margin-left: 1rem; border-left: 3px solid #ffc107; padding-left: 1rem; background: #fff3cd;">
+                            <div>
+                                <strong>${unit.name}</strong>
+                                <div style="font-size: 0.8rem; color: #856404;">
+                                    🔗 ${unit.role} • ${unit.host} • Coordination only
+                                </div>
+                            </div>
+                            <div>
+                                <div class="status-badge ${adminStatusClass}">${unit.state_admin}</div>
+                                <div class="status-badge ${healthStatusClass}">${unit.state_pulled || 'Unknown'}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                if (allCoordinators.length > 2) {
+                    html += `
+                        <div class="detail-row" style="margin-left: 1rem; font-style: italic; color: #856404;">
+                            ... and ${allCoordinators.length - 2} more coordinator nodes
+                        </div>
+                    `;
+                }
+            }
+            
+            // Now show data nodes grouped by shard affinity
+            const orderedKeys = Object.keys(dataNodesByAffinity).sort((a, b) => {
+                if (a === 'unassigned') return -1;
+                if (b === 'unassigned') return 1;
+                return a.localeCompare(b);
+            });
+            
+            if (orderedKeys.length > 0) {
+                html += `
+                    <div style="margin-top: ${allCoordinators.length > 0 ? '1.5rem' : '0'}; margin-bottom: 0.75rem;">
+                        <h4 style="color: #28a745; font-size: 0.9rem; font-weight: 600; margin: 0; padding: 0.5rem 0; border-bottom: 2px solid #28a745;">
+                            📊 Data Cluster Nodes (by Shard Affinity)
+                        </h4>
+                    </div>
+                `;
+            }
+            
+            orderedKeys.forEach(affinityKey => {
+                const dataNodes = dataNodesByAffinity[affinityKey];
+                if (!dataNodes || dataNodes.length === 0) return;
+                
+                // Create shard affinity section header
+                const sectionTitle = affinityKey === 'unassigned' 
+                    ? `❓ Unassigned (${dataNodes.length} nodes)` 
+                    : `📊 Shard ${affinityKey} (${dataNodes.length} nodes)`;
+                
+                html += `
+                    <div style="margin-top: 0.75rem; margin-bottom: 0.5rem; margin-left: 1rem;">
+                        <h5 style="color: #667eea; font-size: 0.8rem; font-weight: 500; margin: 0; opacity: 0.9;">
+                            ${sectionTitle}
+                        </h5>
+                    </div>
+                `;
+                
+                // Show data nodes for this shard affinity
+                const displayUnits = (affinityKey === 'unassigned' || affinityKey === '0') 
+                    ? dataNodes 
+                    : dataNodes.slice(0, 3);
+                
+                displayUnits.forEach(unit => {
+                    const adminStatusClass = getStatusClass(unit.state_admin);
+                    const healthStatusClass = getStatusClass(unit.state_pulled);
+                    
+                    // Add role badge styling
+                    const roleIcon = unit.role === 'primary' ? '👑' : 
+                                   unit.role === 'replica' ? '📋' : 
+                                   unit.role === 'ingest' ? '⬆️' : 
+                                   unit.role === 'search' ? '🔍' : '📦';
+                    
+                    html += `
+                        <div class="detail-row" style="margin-left: 2rem; border-left: 3px solid #28a745; padding-left: 1rem;">
+                            <div>
+                                <strong>${unit.name}</strong>
+                                <div style="font-size: 0.8rem; color: #6c757d;">
+                                    ${roleIcon} ${unit.role} • ${unit.host} • ${unit.shard_affinity || 'Data storage'}
+                                </div>
+                            </div>
+                            <div>
+                                <div class="status-badge ${adminStatusClass}">${unit.state_admin}</div>
+                                <div class="status-badge ${healthStatusClass}">${unit.state_pulled || 'Unknown'}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                // Show "and X more" if needed
+                if (dataNodes.length > displayUnits.length) {
+                    html += `
+                        <div class="detail-row" style="margin-left: 2rem; font-style: italic; color: #6c757d;">
+                            ... and ${dataNodes.length - displayUnits.length} more data nodes
+                        </div>
+                    `;
+                }
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        // Render indices overview
+        function renderIndicesOverview(indices) {
+            const container = document.getElementById('indices-overview');
+            if (!indices || indices.length === 0) {
+                container.innerHTML = '<div class="detail-row">No indices found</div>';
+                return;
+            }
+            
+            let html = '';
+            indices.slice(0, 5).forEach(index => {
+                const healthClass = getStatusClass(index.health);
+                const indexId = `index-${index.name.replace(/[^a-zA-Z0-9]/g, '-')}`;
+                
+                html += `
+                    <div class="detail-row">
+                        <div>
+                            <strong>${index.name}</strong>
+                            <div style="font-size: 0.8rem; color: #6c757d;">
+                                Shards: ${index.shard_count} • Allocated: ${index.allocated_shards}
+                                <br>Replica Count: [${index.shard_replica_count ? index.shard_replica_count.join(', ') : 'N/A'}]
+                                <br>Primary: ${index.primary_complete ? '✓ Complete' : '✗ Incomplete'}
+                            </div>
+                            <div style="margin-top: 4px;">
+                                <span style="font-size: 0.7rem; margin-right: 8px;">
+                                    WRITE: <span class="status-badge ${getStatusClass(index.write_status)}" style="font-size: 0.6rem; padding: 1px 4px;">${index.write_status}</span>
+                                </span>
+                                <span style="font-size: 0.7rem;">
+                                    READ: <span class="status-badge ${getStatusClass(index.read_status)}" style="font-size: 0.6rem; padding: 1px 4px;">${index.read_status}</span>
+                                </span>
+                            </div>
+                            ${index.shard_details && index.shard_details.length > 0 ? `
+                                <button onclick="toggleShardDetails('${indexId}')" style="background: none; border: 1px solid #ccc; padding: 2px 6px; font-size: 0.7rem; margin-top: 4px; cursor: pointer;">
+                                    Show Shard Details
+                                </button>
+                                <div id="${indexId}" class="shard-details" style="display: none; margin-top: 8px; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+                                    ${index.shard_details.map(shard => {
+                                        const shardHealthClass = getStatusClass(shard.status);
+                                        return `
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin: 2px 0; font-size: 0.75rem;">
+                                                <span><strong>${shard.shard_id}</strong>: ${shard.actual_replicas}/${shard.required_replicas} replicas</span>
+                                                <span class="status-badge ${shardHealthClass}" style="font-size: 0.6rem; padding: 1px 4px;">${shard.status}</span>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="status-badge ${healthClass}">${index.health}</div>
+                    </div>
+                `;
+            });
+            
+            if (indices.length > 5) {
+                html += `<div class="detail-row"><em>... and ${indices.length - 5} more</em></div>`;
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        // Toggle shard details visibility
+        function toggleShardDetails(indexId) {
+            const element = document.getElementById(indexId);
+            const button = element.previousElementSibling;
+            
+            if (element.style.display === 'none') {
+                element.style.display = 'block';
+                button.textContent = 'Hide Shard Details';
+            } else {
+                element.style.display = 'none';
+                button.textContent = 'Show Shard Details';
+            }
+        }
+        
+        // Load search units grid
+        async function loadSearchUnitsGrid() {
+            if (!clusterData.search_units) {
+                await loadClusterOverview();
+            }
+            
+            // Render all units
+            renderSearchUnitsGrid();
+        }
+        
+
+        
+        // Render search units grid
+        function renderSearchUnitsGrid() {
+            const container = document.getElementById('search-units-grid');
+            let searchUnits = clusterData.search_units || [];
+            
+            if (searchUnits.length === 0) {
+                container.innerHTML = '<div class="loading">No search units available</div>';
+                return;
+            }
+            
+            // Separate data nodes from coordinator nodes
+            const dataNodes = [];
+            const coordinatorNodes = [];
+            
+            searchUnits.forEach(unit => {
+                if (isCoordinatorNode(unit)) {
+                    coordinatorNodes.push(unit);
+                } else {
+                    dataNodes.push(unit);
+                }
+            });
+            
+            let html = '';
+            
+            // Show data cluster nodes first
+            if (dataNodes.length > 0) {
+                html += `
+                    <div style="grid-column: 1 / -1; margin-bottom: 1rem;">
+                        <h3 style="color: #28a745; margin: 0 0 1rem 0; padding: 0.75rem; background: #f8f9fa; border-left: 4px solid #28a745; border-radius: 4px; display: flex; align-items: center; gap: 0.5rem;">
+                            📊 <span>Data Cluster Nodes</span>
+                            <span style="background: #28a745; color: white; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.8rem; font-weight: 500;">${dataNodes.length}</span>
+                        </h3>
+                    </div>
+                `;
+                
+                dataNodes.forEach(unit => {
+                    const adminStatusClass = getStatusClass(unit.state_admin);
+                    const healthStatusClass = getStatusClass(unit.state_pulled);
+                    
+                    // Add role icon
+                    const roleIcon = unit.role === 'primary' ? '👑' : 
+                                   unit.role === 'replica' ? '📋' : 
+                                   unit.role === 'ingest' ? '⬆️' : 
+                                   unit.role === 'search' ? '🔍' : '📦';
+                    
+                    html += `
+                        <div class="card" data-name="${unit.name.toLowerCase()}" data-shard="${unit.shard_id || 'unassigned'}">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    ${roleIcon} ${unit.name}
+                                    ${unit.shard_category ? `<div style="font-size: 0.75rem; color: #667eea; font-weight: normal;">${unit.shard_category}</div>` : ''}
+                                </div>
+                                <div>
+                                    <div class="status-badge ${adminStatusClass}">${unit.state_admin}</div>
+                                    <div class="status-badge ${healthStatusClass}">${unit.state_pulled || 'Unknown'}</div>
+                                </div>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Host:</span>
+                                <span class="detail-value">${unit.host}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Role:</span>
+                                <span class="detail-value">${unit.role}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Shard ID:</span>
+                                <span class="detail-value">${unit.shard_id || 'N/A'}</span>
+                            </div>
+                            ${unit.shard_affinity ? `
+                                <div class="detail-row">
+                                    <span class="detail-label">Shard Affinity:</span>
+                                    <span class="detail-value">${unit.shard_affinity}</span>
+                                </div>
+                            ` : ''}
+                            <div class="detail-row">
+                                <span class="detail-label">Indices (Actual/Goal):</span>
+                                <span class="detail-value">${unit.index_count || 0} / ${unit.goal_index_count || 0}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Shards (Actual/Goal):</span>
+                                <span class="detail-value">${unit.shard_count || 0} / ${unit.goal_shard_count || 0}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Goal Indices:</span>
+                                <span class="detail-value">${unit.goal_indices || 'None'}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Ports:</span>
+                                <span class="detail-value">${formatPorts(unit.ports)}</span>
+                            </div>
+                            <button class="refresh-btn" onclick="loadSearchUnitDetail('${unit.name}')" style="margin-top: 1rem; width: 100%;">
+                                View Details
+                            </button>
+                        </div>
+                    `;
+                });
+            }
+            
+            // Show coordinator cluster nodes separately
+            if (coordinatorNodes.length > 0) {
+                html += `
+                    <div style="grid-column: 1 / -1; margin: 2rem 0 1rem 0;">
+                        <h3 style="color: #ffc107; margin: 0 0 0.5rem 0; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px; display: flex; align-items: center; gap: 0.5rem;">
+                            🎯 <span>Coordinator Cluster Nodes</span>
+                            <span style="background: #ffc107; color: #212529; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.8rem; font-weight: 500;">${coordinatorNodes.length}</span>
+                        </h3>
+                        <p style="color: #856404; font-size: 0.9rem; margin: 0 0 1rem 0.75rem; font-style: italic;">
+                            ⚠️ These nodes belong to a separate cluster and don't participate in shard allocation
+                        </p>
+                    </div>
+                `;
+                
+                coordinatorNodes.forEach(unit => {
+                    const adminStatusClass = getStatusClass(unit.state_admin);
+                    const healthStatusClass = getStatusClass(unit.state_pulled);
+                    
+                    html += `
+                        <div class="card" data-name="${unit.name.toLowerCase()}" style="background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-left: 4px solid #ffc107;">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    🔗 ${unit.name}
+                                    <div style="font-size: 0.75rem; color: #856404; font-weight: normal;">Coordinator Node</div>
+                                </div>
+                                <div>
+                                    <div class="status-badge ${adminStatusClass}">${unit.state_admin}</div>
+                                    <div class="status-badge ${healthStatusClass}">${unit.state_pulled || 'Unknown'}</div>
+                                </div>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Host:</span>
+                                <span class="detail-value">${unit.host}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Role:</span>
+                                <span class="detail-value">${unit.role}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Cluster Info:</span>
+                                <span class="detail-value">${unit.odin_cluster || 'N/A'}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Data Storage:</span>
+                                <span class="detail-value" style="color: #856404; font-weight: 500;">❌ No (coordination only)</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Ports:</span>
+                                <span class="detail-value">${formatPorts(unit.ports)}</span>
+                            </div>
+                            <button class="refresh-btn" onclick="loadSearchUnitDetail('${unit.name}')" style="margin-top: 1rem; width: 100%;">
+                                View Details
+                            </button>
+                        </div>
+                    `;
+                });
+            }
+            
+            if (html === '') {
+                html = '<div class="loading">No search units found</div>';
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        // Load allocation matrix
+        // BROKEN FUNCTION COMMENTED OUT - see allocation-fix.js
+        async function loadAllocationMatrix() {
+            // This function is overridden in allocation-fix.js
+            const container = document.getElementById("allocation-matrix-container");
+            container.innerHTML = "<div class=\"loading\">Loading allocation matrix...</div>";
+        }
+        
+        // Function to render Goal States Overview
+        function renderGoalStatesOverview(data) {
+            let html = '';
+            
+            if (!data.index_allocations || data.index_allocations.length === 0) {
+                return '<div style="color: #6c757d; font-style: italic;">No goal state data available</div>';
+            }
+            
+            // Group by index and extract goal states
+            data.index_allocations.forEach(indexAllocation => {
+                if (!indexAllocation.search_unit_goals) return;
+                
+                html += `
+                    <div class="index-goal-section" style="margin-bottom: 1.5rem; padding: 1rem; background: #f8f9fa; border-radius: 6px; border-left: 4px solid ${indexAllocation.active ? '#28a745' : '#6c757d'};">
+                        <h5 style="margin: 0 0 1rem 0; color: ${indexAllocation.active ? '#28a745' : '#6c757d'};">
+                            ${indexAllocation.active ? '🟢 ' : '⚪ '}${indexAllocation.index_name}
+                            ${indexAllocation.active ? '<span style="font-size: 0.8em; margin-left: 0.5rem; color: #28a745;">(ACTIVE)</span>' : '<span style="font-size: 0.8em; margin-left: 0.5rem; color: #6c757d;">(INACTIVE)</span>'}
+                        </h5>
+                `;
+                
+                // Group goal states by shard
+                const goalStatesByShard = {};
+                
+                Object.entries(indexAllocation.search_unit_goals).forEach(([unitName, unitGoal]) => {
+                    if (unitGoal.goal_state && unitGoal.goal_state.local_shards) {
+                        Object.entries(unitGoal.goal_state.local_shards).forEach(([goalIndexName, shardsWithRoles]) => {
+                            // Only show goal states for this specific index
+                            if (goalIndexName === indexAllocation.index_name) {
+                                Object.entries(shardsWithRoles).forEach(([shardId, role]) => {
+                                    if (!goalStatesByShard[shardId]) {
+                                        goalStatesByShard[shardId] = { primary: [], replicas: [] };
+                                    }
+                                    
+                                    // Determine if this unit is primary or replica based on role
+                                    if (role === 'PRIMARY') {
+                                        goalStatesByShard[shardId].primary.push(unitName);
+                                    } else if (role === 'SEARCH_REPLICA') {
+                                        goalStatesByShard[shardId].replicas.push(unitName);
+                                    }
+                                });
+                            }
+                        });
+                    }
+                });
+                
+                // Render shards with their goal states
+                if (Object.keys(goalStatesByShard).length > 0) {
+                    Object.entries(goalStatesByShard).sort(([a], [b]) => a.localeCompare(b)).forEach(([shardId, goalNodes]) => {
+                        html += `
+                            <div class="shard-goal-section" style="margin-bottom: 1rem; padding: 0.75rem; background: white; border-radius: 4px; border: 1px solid #dee2e6;">
+                                <h6 style="margin: 0 0 0.5rem 0; color: #495057;">📊 ${shardId}</h6>
+                                <div style="margin-left: 1rem;">
+                        `;
+                        
+                        // Primary nodes
+                        html += `
+                            <div style="margin-bottom: 0.5rem;">
+                                <strong style="color: #0066cc;">Primary:</strong> 
+                                <span style="color: #495057;">
+                                    ${goalNodes.primary.length > 0 ? goalNodes.primary.join(', ') : 'X'}
+                                </span>
+                            </div>
+                        `;
+                        
+                        // Replica nodes
+                        html += `
+                            <div>
+                                <strong style="color: #6f42c1;">Replicas:</strong> 
+                                <span style="color: #495057;">
+                                    ${goalNodes.replicas.length > 0 ? goalNodes.replicas.join(', ') : 'X'}
+                                </span>
+                            </div>
+                        `;
+                        
+                        html += `
+                                </div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    html += '<div style="color: #6c757d; font-style: italic; margin-left: 1rem;">No goal states found for this index</div>';
+                }
+                
+                html += '</div>';
+            });
+            
+            if (html === '') {
+                return '<div style="color: #6c757d; font-style: italic;">No goal state data available</div>';
+            }
+            
+            return html;
+        }
+        
+        // Function to switch allocation view between shard-centric and unit-centric
+        function switchAllocationView(viewType) {
+            // Update button styles
+            const shardBtn = document.getElementById('shard-view-btn');
+            const unitBtn = document.getElementById('unit-view-btn');
+            
+            if (viewType === 'shard') {
+                shardBtn.style.background = '#667eea';
+                shardBtn.style.color = 'white';
+                unitBtn.style.background = 'white';
+                unitBtn.style.color = '#333';
+            } else {
+                unitBtn.style.background = '#667eea';
+                unitBtn.style.color = 'white';
+                shardBtn.style.background = 'white';
+                shardBtn.style.color = '#333';
+            }
+            
+            // Show/hide views for all indices
+            document.querySelectorAll('[id^="shard-centric-view-"]').forEach(element => {
+                element.style.display = viewType === 'shard' ? 'block' : 'none';
+            });
+            
+            document.querySelectorAll('[id^="unit-centric-view-"]').forEach(element => {
+                element.style.display = viewType === 'unit' ? 'block' : 'none';
+            });
+        }
+        
+        // Function to switch shard tabs in allocation matrix
+        function switchShardTab(indexName, tabId) {
+            
+            // Update tab active state for this index
+            const indexSection = document.querySelector(`#shard-centric-view-${indexName}`).closest('.index-allocation-section');
+            if (!indexSection) return;
+            
+            const tabs = indexSection.querySelectorAll('.shard-tab-btn');
+            tabs.forEach(tab => {
+                tab.style.background = 'white';
+                tab.style.color = '#333';
+            });
+            
+            // Find and activate the clicked tab
+            const clickedTab = Array.from(tabs).find(tab => 
+                tab.textContent.includes(tabId) || 
+                (tabId === 'all' && tab.textContent.includes('All Units'))
+            );
+            if (clickedTab) {
+                clickedTab.style.background = '#667eea';
+                clickedTab.style.color = 'white';
+            }
+            
+            // Filter shard sections based on selected tab
+            const shardSections = indexSection.querySelectorAll('.shard-detail-section');
+            shardSections.forEach(section => {
+                const shardTitle = section.querySelector('h5');
+                if (!shardTitle) return;
+                
+                const shardText = shardTitle.textContent;
+                
+                if (tabId === 'all') {
+                    // Show all shards
+                    section.style.display = 'block';
+                } else if (tabId === 'unassigned') {
+                    // Show only unassigned shards (if any)
+                    section.style.display = shardText.includes('Unassigned') ? 'block' : 'none';
+                } else {
+                    // Show only the specific shard
+                    const shardIdFromTitle = shardText.match(/Shard (S\d+)/i);
+                    if (shardIdFromTitle && shardIdFromTitle[1].toLowerCase() === tabId.toLowerCase()) {
+                        section.style.display = 'block';
+                    } else {
+                        section.style.display = 'none';
+                    }
+                }
+            });
+            
+            // Also filter unit-centric view if it exists
+            const unitSections = indexSection.querySelectorAll('.unit-detail-section');
+            unitSections.forEach(section => {
+                const shardBadge = section.querySelector('[style*="background: #667eea"]');
+                if (!shardBadge) return;
+                
+                const badgeText = shardBadge.textContent;
+                
+                if (tabId === 'all') {
+                    section.style.display = 'block';
+                } else if (tabId === 'unassigned') {
+                    section.style.display = badgeText.includes('Unassigned') ? 'block' : 'none';
+                } else {
+                    // Extract shard ID from badge text like "Shard s00"
+                    const unitShardId = badgeText.replace('Shard ', '').toLowerCase();
+                    section.style.display = unitShardId === tabId.toLowerCase() ? 'block' : 'none';
+                }
+            });
+        }
+        
+        // Load controller tasks
+        async function loadTasks() {
+            const response = await fetch('/visualizer/tasks');
+            const tasks = await response.json();
+            
+            const container = document.getElementById('tasks-list');
+            
+            if (!tasks || tasks.length === 0) {
+                container.innerHTML = '<div class="loading">No tasks found</div>';
+                return;
+            }
+            
+            let html = '<div class="task-list">';
+            tasks.forEach(task => {
+                const statusClass = getStatusClass(task.status);
+                
+                html += `
+                    <div class="task-item">
+                        <div class="task-priority">${task.priority}</div>
+                        <div style="flex: 1;">
+                            <strong>${task.name}</strong>
+                            <div style="font-size: 0.8rem; color: #6c757d;">
+                                ${task.schedule} • Last: ${task.last_updated || 'Never'}
+                            </div>
+                        </div>
+                        <div class="status-badge ${statusClass}">${task.status}</div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            
+            container.innerHTML = html;
+        }
+        
+                         // Load coordinator group routing states
+         async function loadCoordinatorStates() {
+             const response = await fetch('/visualizer/coordinator-states');
+             const data = await response.json();
+
+             const container = document.getElementById('coordinator-states-container');
+
+             if (!data.index_routings || data.index_routings.length === 0) {
+                 container.innerHTML = `
+                     <div class="card">
+                         <div class="card-header">
+                             <div class="card-title">🔀 Coordinator Group Routing</div>
+                         </div>
+                         <div style="padding: 2rem; text-align: center; color: #6c757d;">
+                             No coordinator routing configurations found in cluster
+                         </div>
+                     </div>
+                 `;
+                 return;
+             }
+
+             let totalShards = 0;
+             data.index_routings.forEach(indexRouting => {
+                 totalShards += indexRouting.total_shards;
+             });
+
+             let html = `
+                 <div class="card">
+                     <div class="card-header">
+                         <div class="card-title">🔀 Coordinator Group Routing</div>
+                         <div style="font-size: 0.8rem; color: #6c757d; margin-top: 0.25rem;">
+                             Group: ${data.coordinator_group} • Indexes: ${data.index_routings.length} • Total shards: ${totalShards}
+                         </div>
+                     </div>
+                     <div style="padding: 1rem;">
+             `;
+             
+             // Render each index
+             data.index_routings.forEach(indexRouting => {
+                 const indexName = indexRouting.index_name;
+                 const shards = indexRouting.shard_routings || [];
+                 
+                 html += `
+                     <div class="index-group" style="border: 1px solid #e1e5e9; border-radius: 6px; margin-bottom: 1.5rem; background: #f8f9fa;">
+                         <div style="padding: 1rem; border-bottom: 1px solid #e1e5e9; background: #007bff; color: white;">
+                             <h3 style="margin: 0; font-size: 1.1rem;">📊 ${indexName}</h3>
+                             <div style="font-size: 0.9rem; margin-top: 0.25rem; opacity: 0.9;">
+                                 ${indexRouting.total_shards} shard${indexRouting.total_shards > 1 ? 's' : ''} total, ${shards.length} with routing
+                             </div>
+                         </div>
+                         <div style="padding: 1rem;">
+                 `;
+                 
+                 if (shards.length === 0) {
+                     html += `
+                         <div style="text-align: center; color: #6c757d; padding: 1rem;">
+                             No shard routing configured for this index
+                         </div>
+                     `;
+                 } else {
+                     // Sort shards by shard_id
+                     shards.sort((a, b) => a.shard_id.localeCompare(b.shard_id)).forEach(shard => {
+                         const hasPrimaryNodes = shard.primary_nodes && shard.primary_nodes.length > 0;
+                         const hasReplicaNodes = shard.replica_nodes && shard.replica_nodes.length > 0;
+                         
+                         html += `
+                             <div class="shard-routing" style="border: 1px solid #dee2e6; border-radius: 4px; margin-bottom: 1rem; background: white;">
+                                 <div style="padding: 0.75rem; border-bottom: 1px solid #dee2e6; background: #f8f9fa;">
+                                     <div style="display: flex; justify-content: space-between; align-items: center;">
+                                         <strong style="color: #495057;">🔹 Shard ${shard.shard_id}</strong>
+                                         <div style="font-size: 0.8rem; color: #6c757d;">
+                                             ${shard.total_nodes} node${shard.total_nodes !== 1 ? 's' : ''} routing
+                                         </div>
+                                     </div>
+                                 </div>
+                                 <div style="padding: 0.75rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                         `;
+                         
+                         // Primary nodes
+                         html += `
+                             <div>
+                                 <div style="font-weight: 600; color: #fd7e14; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
+                                     ✏️ <span>Primary Nodes</span>
+                                     <span style="background: #fd7e14; color: white; padding: 0.1rem 0.4rem; border-radius: 10px; font-size: 0.7rem;">${hasPrimaryNodes ? shard.primary_nodes.length : 0}</span>
+                                 </div>
+                                 <div style="margin-left: 1rem; font-size: 0.9rem;">
+                         `;
+                         
+                         if (hasPrimaryNodes) {
+                             shard.primary_nodes.forEach(node => {
+                                 html += `<div style="padding: 0.2rem 0; color: #fd7e14;">• ${node}</div>`;
+                             });
+                         } else {
+                             html += `<div style="color: #6c757d; font-style: italic;">No primary nodes assigned</div>`;
+                         }
+                         
+                         html += `
+                                 </div>
+                             </div>
+                         `;
+                         
+                         // Replica nodes  
+                         html += `
+                             <div>
+                                 <div style="font-weight: 600; color: #28a745; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
+                                     🔍 <span>Replica Nodes</span>
+                                     <span style="background: #28a745; color: white; padding: 0.1rem 0.4rem; border-radius: 10px; font-size: 0.7rem;">${hasReplicaNodes ? shard.replica_nodes.length : 0}</span>
+                                 </div>
+                                 <div style="margin-left: 1rem; font-size: 0.9rem;">
+                         `;
+                         
+                         if (hasReplicaNodes) {
+                             shard.replica_nodes.forEach(node => {
+                                 html += `<div style="padding: 0.2rem 0; color: #28a745;">• ${node}</div>`;
+                             });
+                         } else {
+                             html += `<div style="color: #6c757d; font-style: italic;">No replica nodes assigned</div>`;
+                         }
+                         
+                         html += `
+                                 </div>
+                             </div>
+                         `;
+                         
+                         html += `
+                                 </div>
+                             </div>
+                         `;
+                     });
+                 }
+                 
+                 html += `
+                         </div>
+                     </div>
+                 `;
+             });
+             
+             html += `
+                     </div>
+                 </div>
+             `;
+ 
+             container.innerHTML = html;
+         }
+         
+         // Helper function to format timestamps
+         function formatTimestamp(timestamp) {
+             if (!timestamp) return 'Unknown';
+             try {
+                 const date = new Date(timestamp);
+                 return date.toLocaleString('en-US', { 
+                     month: 'short', 
+                     day: 'numeric', 
+                     hour: '2-digit', 
+                     minute: '2-digit' 
+                 });
+             } catch (e) {
+                 return timestamp;
+             }
+         }
+        
+        // Load search unit detail
+        async function loadSearchUnitDetail(unitName) {
+            try {
+                const response = await fetch(`/visualizer/search-unit/${unitName}`);
+                const detail = await response.json();
+                
+                // Create a proper modal dialog
+                showSearchUnitModal(unitName, detail);
+            } catch (error) {
+                console.error('Error loading search unit detail:', error);
+                alert(`Error loading details for ${unitName}: ${error.message}`);
+            }
+        }
+        
+        function showSearchUnitModal(unitName, detail) {
+            // Remove existing modal if any
+            const existingModal = document.getElementById('search-unit-modal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            const modal = document.createElement('div');
+            modal.id = 'search-unit-modal';
+            modal.innerHTML = `
+                <div class="modal-overlay" onclick="closeSearchUnitModal()">
+                    <div class="modal-content" onclick="event.stopPropagation()">
+                        <div class="modal-header">
+                            <h2>Search Unit Details: ${unitName}</h2>
+                            <button class="modal-close" onclick="closeSearchUnitModal()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="detail-section">
+                                <h3>Convergence Status</h3>
+                                <div class="convergence-status ${detail.convergence_status?.converged ? 'converged' : 'not-converged'}">
+                                    ${detail.convergence_status?.converged ? '✓ Converged' : '✗ Not Converged'}
+                                </div>
+                            </div>
+                            
+                            <div class="detail-section">
+                                <h3>Actual State</h3>
+                                <div class="json-container">
+                                    <div class="node-metrics">
+                                        ${formatNodeMetrics(detail.actual_state)}
+                                    </div>
+                                    <div class="node-routing">
+                                        <h4>Node Routing</h4>
+                                        ${formatNodeRouting(detail.actual_state?.nodeRouting)}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="detail-section">
+                                <h3>Goal State</h3>
+                                <div class="json-container">
+                                    ${formatGoalState(detail.goal_state)}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+        }
+        
+        function closeSearchUnitModal() {
+            const modal = document.getElementById('search-unit-modal');
+            if (modal) {
+                modal.remove();
+            }
+        }
+        
+        function formatNodeMetrics(actualState) {
+            if (!actualState) return '<div class="no-data">No actual state data</div>';
+            
+            return `
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <span class="metric-label">Node Name:</span>
+                        <span class="metric-value">${actualState.nodeName || 'N/A'}</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Address:</span>
+                        <span class="metric-value">${actualState.address || 'N/A'}:${actualState.port || 'N/A'}</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Node ID:</span>
+                        <span class="metric-value">${actualState.nodeId || 'N/A'}</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Memory Usage:</span>
+                        <span class="metric-value">${actualState.memoryUsedMB || 0} MB / ${actualState.memoryMaxMB || 0} MB (${actualState.memoryUsedPercent || 0}%)</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Heap Usage:</span>
+                        <span class="metric-value">${actualState.heapUsedMB || 0} MB / ${actualState.heapMaxMB || 0} MB (${actualState.heapUsedPercent || 0}%)</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">CPU Usage:</span>
+                        <span class="metric-value">${actualState.cpuUsedPercent || 0}%</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Disk Usage:</span>
+                        <span class="metric-value">${actualState.diskTotalMB - actualState.diskAvailableMB || 0} MB / ${actualState.diskTotalMB || 0} MB</span>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function formatNodeRouting(nodeRouting) {
+            if (!nodeRouting || Object.keys(nodeRouting).length === 0) {
+                return '<div class="no-data">No routing information</div>';
+            }
+            
+            let html = '';
+            for (const [indexName, shards] of Object.entries(nodeRouting)) {
+                html += `
+                    <div class="index-routing">
+                        <h5>Index: ${indexName}</h5>
+                        <div class="shards-list">
+                `;
+                
+                if (shards && shards.length > 0) {
+                    shards.forEach(shard => {
+                        html += `
+                            <div class="shard-item ${shard.primary ? 'primary' : 'replica'}">
+                                <span class="shard-id">Shard ${shard.shardId}</span>
+                                <span class="shard-role">${shard.primary ? 'PRIMARY' : 'REPLICA'}</span>
+                                <span class="shard-state">${shard.state || 'UNKNOWN'}</span>
+                                ${shard.relocating ? '<span class="relocating">RELOCATING</span>' : ''}
+                            </div>
+                        `;
+                    });
+                } else {
+                    html += '<div class="no-data">No shards</div>';
+                }
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            }
+            
+            return html;
+        }
+        
+        function formatGoalState(goalState) {
+            if (!goalState || !goalState.local_shards || Object.keys(goalState.local_shards).length === 0) {
+                return '<div class="no-data">No goal state data</div>';
+            }
+            
+            let html = '';
+            for (const [indexName, shards] of Object.entries(goalState.local_shards)) {
+                html += `
+                    <div class="index-goal">
+                        <h5>Index: ${indexName}</h5>
+                        <div class="goal-shards">
+                `;
+                
+                for (const [shardId, role] of Object.entries(shards)) {
+                    html += `
+                        <div class="goal-shard ${role.toLowerCase()}">
+                            <span class="shard-id">Shard ${shardId}</span>
+                            <span class="shard-role">${role}</span>
+                        </div>
+                    `;
+                }
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            }
+            
+            return html;
+        }
+        
+        // Load index detail
+        async function loadIndexDetail(indexName) {
+            try {
+                const response = await fetch(`/visualizer/index/${indexName}`);
+                const detail = await response.json();
+                
+                // Create modal or detailed view
+                alert(`Index: ${indexName}\n\nShards: ${detail.shard_details?.length || 0}\n\nPlanned Allocations: ${detail.planned_allocations?.length || 0}\n\nActual Allocations: ${detail.actual_allocations?.length || 0}`);
+            } catch (error) {
+                console.error('Error loading index detail:', error);
+                alert(`Error loading details for ${indexName}: ${error.message}`);
+            }
+        }
+        
+        // Filter functions
+        function filterSearchUnits(query) {
+            const cards = document.querySelectorAll('#search-units-grid .card');
+            const sections = document.querySelectorAll('#search-units-grid h3, #search-units-grid p');
+            
+            if (!query.trim()) {
+                // Show all cards and sections when no filter
+                cards.forEach(card => card.style.display = 'block');
+                sections.forEach(section => section.style.display = 'block');
+                return;
+            }
+            
+            let hasVisibleDataNodes = false;
+            let hasVisibleCoordinatorNodes = false;
+            
+            cards.forEach(card => {
+                const name = card.getAttribute('data-name');
+                const isMatch = name.includes(query.toLowerCase());
+                card.style.display = isMatch ? 'block' : 'none';
+                
+                if (isMatch) {
+                    // Check if this is a coordinator node based on styling
+                    const isCoordinator = card.style.background.includes('fff3cd') || 
+                                        card.style.borderLeft.includes('ffc107');
+                    if (isCoordinator) {
+                        hasVisibleCoordinatorNodes = true;
+                    } else {
+                        hasVisibleDataNodes = true;
+                    }
+                }
+            });
+            
+            // Show/hide section headers based on whether they have visible cards
+            sections.forEach(section => {
+                const text = section.textContent || '';
+                if (text.includes('Data Cluster')) {
+                    section.style.display = hasVisibleDataNodes ? 'block' : 'none';
+                } else if (text.includes('Coordinator Cluster') || text.includes('separate cluster')) {
+                    section.style.display = hasVisibleCoordinatorNodes ? 'block' : 'none';
+                }
+            });
+        }
+        
+        function filterIndices(query) {
+            const cards = document.querySelectorAll('#indices-grid .card');
+            cards.forEach(card => {
+                const name = card.getAttribute('data-name');
+                card.style.display = name.includes(query.toLowerCase()) ? 'block' : 'none';
+            });
+        }
+        
+        // Utility functions
+        function getStatusClass(status) {
+            if (!status) return 'status-red';
+            
+            const statusUpper = status.toUpperCase();
+            switch(statusUpper) {
+                case 'GREEN':
+                case 'NORMAL':
+                case 'COMPLETED':
+                    return 'status-green';
+                case 'YELLOW':
+                case 'RUNNING':
+                    return 'status-yellow';
+                case 'RED':
+                case 'FAILED':
+                    return 'status-red';
+                case 'DRAIN':
+                    return 'status-drain';
+                default:
+                    return 'status-normal';
+            }
+        }
+        
+        function formatPorts(ports) {
+            if (!ports) return 'N/A';
+            if (typeof ports === 'object' && ports.http !== undefined && ports.transport !== undefined) {
+                return `http:${ports.http}, transport:${ports.transport}`;
+            }
+            if (typeof ports === 'object') {
+                return Object.entries(ports).map(([key, value]) => `${key}:${value}`).join(', ');
+            }
+            return 'N/A';
+        }
+        
+        /**
+         * Determines if a search unit is a coordinator node
+         * Coordinator nodes belong to a separate cluster and are not part of shard allocation
+         * 
+         * Current logic: role="coordinator" OR name starts with "coordinator"
+         * TODO: Use odin_cluster name information to properly identify coordinator nodes
+         *       instead of relying on naming conventions. Coordinator nodes should have
+         *       a different odin_cluster value than data nodes.
+         */
+        function isCoordinatorNode(unit) {
+            if (!unit) {
+                return false;
+            }
+            
+            // Check if role is explicitly set to coordinator
+            const role = (unit.role || '').toLowerCase();
+            if (role === 'coordinator') {
+                return true;
+            }
+            
+            // Check if name starts with "coordinator" prefix (for data nodes acting as coordinators)
+            const name = (unit.name || '').toLowerCase();
+            if (name.startsWith('coordinator')) {
+                return true;
+            }
+            
+            return false;
+        }
+        
+        function showError(message) {
+            const container = document.querySelector('.container');
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.textContent = message;
+            container.insertBefore(errorDiv, container.firstChild);
+            
+            setTimeout(() => {
+                errorDiv.remove();
+            }, 5000);
+        }
+        
+        function refreshCurrentTab() {
+            loadTabData(currentTab);
+        }
+        
+        // Auto-refresh functionality
+        document.getElementById('autoRefresh').addEventListener('change', function() {
+            if (this.checked) {
+                autoRefreshInterval = setInterval(() => {
+                    refreshCurrentTab();
+                }, 5000);
+            } else {
+                if (autoRefreshInterval) {
+                    clearInterval(autoRefreshInterval);
+                    autoRefreshInterval = null;
+                }
+            }
+        });
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadTabData('overview');
+        });
+    </script>
+    <script src="allocation-fix.js"></script>
+</body>
+</html> 

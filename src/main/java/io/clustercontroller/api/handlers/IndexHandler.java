@@ -45,8 +45,8 @@ public class IndexHandler {
      */
     @PutMapping("/{index}")
     public ResponseEntity<Object> createIndex(
-            @PathVariable String clusterId,
-            @PathVariable String index,
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("index") String index,
             @RequestBody(required = false) IndexRequest request) {
         try {
             log.info("Creating index '{}' in cluster '{}'", index, clusterId);
@@ -72,8 +72,8 @@ public class IndexHandler {
      */
     @GetMapping("/{index}")
     public ResponseEntity<Object> getIndex(
-            @PathVariable String clusterId,
-            @PathVariable String index) {
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("index") String index) {
         try {
             log.info("Getting index '{}' from cluster '{}'", index, clusterId);
             String indexInfo = indexManager.getIndex(clusterId, index);
@@ -93,8 +93,8 @@ public class IndexHandler {
      */
     @DeleteMapping("/{index}")
     public ResponseEntity<Object> deleteIndex(
-            @PathVariable String clusterId,
-            @PathVariable String index) {
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("index") String index) {
         try {
             log.info("Deleting index '{}' from cluster '{}'", index, clusterId);
             indexManager.deleteIndex(clusterId, index);
@@ -118,8 +118,8 @@ public class IndexHandler {
      */
     @GetMapping("/{index}/_settings")
     public ResponseEntity<Object> getIndexSettings(
-            @PathVariable String clusterId,
-            @PathVariable String index) {
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("index") String index) {
         try {
             log.info("Getting settings for index '{}' from cluster '{}'", index, clusterId);
             String settings = indexManager.getSettings(clusterId, index);
@@ -139,8 +139,8 @@ public class IndexHandler {
      */
     @PutMapping("/{index}/_settings")
     public ResponseEntity<Object> updateIndexSettings(
-            @PathVariable String clusterId,
-            @PathVariable String index,
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("index") String index,
             @RequestBody String settingsJson) {
         try {
             log.info("Updating settings for index '{}' in cluster '{}'", index, clusterId);
@@ -165,8 +165,8 @@ public class IndexHandler {
      */
     @GetMapping("/{index}/_mapping")
     public ResponseEntity<Object> getIndexMapping(
-            @PathVariable String clusterId,
-            @PathVariable String index) {
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("index") String index) {
         try {
             log.info("Getting mapping for index '{}' from cluster '{}'", index, clusterId);
             String mapping = indexManager.getMapping(clusterId, index);
@@ -186,8 +186,8 @@ public class IndexHandler {
      */
     @PutMapping("/{index}/_mapping")
     public ResponseEntity<Object> updateIndexMapping(
-            @PathVariable String clusterId,
-            @PathVariable String index,
+            @PathVariable("clusterId") String clusterId,
+            @PathVariable("index") String index,
             @RequestBody String mappingsJson) {
         try {
             log.info("Updating mapping for index '{}' in cluster '{}'", index, clusterId);

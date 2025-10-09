@@ -26,6 +26,7 @@ class ActualAllocationUpdaterTaskTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         when(taskContext.getActualAllocationUpdater()).thenReturn(actualAllocationUpdater);
+        when(taskContext.getClusterName()).thenReturn("test-cluster");
     }
     
     @Test
@@ -37,7 +38,7 @@ class ActualAllocationUpdaterTaskTest {
         String result = task.execute(taskContext);
         
         assertThat(result).isEqualTo(TASK_STATUS_COMPLETED);
-        verify(actualAllocationUpdater).updateActualAllocations();
+        verify(actualAllocationUpdater).updateActualAllocations("test-cluster");
     }
     
     @Test
@@ -61,11 +62,11 @@ class ActualAllocationUpdaterTaskTest {
         String input = "";
         ActualAllocationUpdaterTask task = new ActualAllocationUpdaterTask(taskName, 1, input, TASK_SCHEDULE_REPEAT);
         
-        doThrow(new RuntimeException("Allocation update failed")).when(actualAllocationUpdater).updateActualAllocations();
+        doThrow(new RuntimeException("Allocation update failed")).when(actualAllocationUpdater).updateActualAllocations("test-cluster");
         
         String result = task.execute(taskContext);
         
         assertThat(result).isEqualTo(TASK_STATUS_FAILED);
-        verify(actualAllocationUpdater).updateActualAllocations();
+        verify(actualAllocationUpdater).updateActualAllocations("test-cluster");
     }
 }

@@ -895,6 +895,110 @@ public class EtcdMetadataStoreTest {
         verify(mockTxn).commit();
     }
 
+    // ========================= ACTUAL ALLOCATION TESTS =========================
+    
+    @Test
+    public void testGetActualAllocationSuccess() throws Exception {
+        EtcdMetadataStore store = newStore();
+        String clusterId = "test-cluster";
+        String indexName = "test-index";
+        String shardId = "0";
+        
+        // Mock JSON response from etcd
+        String json = "{\"shard_id\":\"0\",\"index_name\":\"test-index\",\"ingest_sus\":[\"node1\"],\"search_sus\":[\"node2\",\"node3\"]}";
+        KeyValue mockKeyValue = mock(KeyValue.class);
+        when(mockKeyValue.getValue()).thenReturn(ByteSequence.from(json, UTF_8));
+        
+        GetResponse mockResponse = mock(GetResponse.class);
+        when(mockResponse.getKvs()).thenReturn(Collections.singletonList(mockKeyValue));
+        
+        when(mockKv.get(any(ByteSequence.class)))
+                .thenReturn(CompletableFuture.completedFuture(mockResponse));
+        
+        // Execute
+        ShardAllocation result = store.getActualAllocation(clusterId, indexName, shardId);
+        
+        // Verify
+        assertThat(result).isNotNull();
+        assertThat(result.getShardId()).isEqualTo(shardId);
+        assertThat(result.getIndexName()).isEqualTo(indexName);
+        assertThat(result.getIngestSUs()).containsExactly("node1");
+        assertThat(result.getSearchSUs()).containsExactly("node2", "node3");
+    }
+    
+    @Test
+    public void testGetActualAllocationNotFound() throws Exception {
+        EtcdMetadataStore store = newStore();
+        String clusterId = "test-cluster";
+        String indexName = "test-index";
+        String shardId = "0";
+        
+        // Mock empty response
+        GetResponse mockResponse = mock(GetResponse.class);
+        when(mockResponse.getKvs()).thenReturn(Collections.emptyList());
+        
+        when(mockKv.get(any(ByteSequence.class)))
+                .thenReturn(CompletableFuture.completedFuture(mockResponse));
+        
+        // Execute
+        ShardAllocation result = store.getActualAllocation(clusterId, indexName, shardId);
+        
+        // Verify
+        assertThat(result).isNull();
+    }
+    
+    @Test
+    public void testSetActualAllocationSuccess() throws Exception {
+        EtcdMetadataStore store = newStore();
+        String clusterId = "test-cluster";
+        String indexName = "test-index";
+        String shardId = "0";
+        
+        ShardAllocation allocation = new io.clustercontroller.models.ShardAllocation(shardId, indexName);
+        allocation.setIngestSUs(Arrays.asList("node1"));
+        allocation.setSearchSUs(Arrays.asList("node2", "node3"));
+        
+        PutResponse mockPutResponse = mock(PutResponse.class);
+        when(mockKv.put(any(ByteSequence.class), any(ByteSequence.class)))
+                .thenReturn(CompletableFuture.completedFuture(mockPutResponse));
+        
+        // Execute
+        store.setActualAllocation(clusterId, indexName, shardId, allocation);
+        
+        // Verify the put call was made with correct key and value
+        ArgumentCaptor<ByteSequence> keyCaptor = ArgumentCaptor.forClass(ByteSequence.class);
+        ArgumentCaptor<ByteSequence> valueCaptor = ArgumentCaptor.forClass(ByteSequence.class);
+        verify(mockKv).put(keyCaptor.capture(), valueCaptor.capture());
+        
+        String capturedKey = keyCaptor.getValue().toString(UTF_8);
+        String capturedValue = valueCaptor.getValue().toString(UTF_8);
+        
+        assertThat(capturedKey).contains("test-cluster/indices/test-index/0/actual-allocation");
+        assertThat(capturedValue).contains("\"shard_id\":\"0\"");
+        assertThat(capturedValue).contains("\"index_name\":\"test-index\"");
+        assertThat(capturedValue).contains("\"ingest_sus\":[\"node1\"]");
+        assertThat(capturedValue).contains("\"search_sus\":[\"node2\",\"node3\"]");
+    }
+    
+    @Test
+    public void testSetActualAllocationWithException() throws Exception {
+        EtcdMetadataStore store = newStore();
+        String clusterId = "test-cluster";
+        String indexName = "test-index";
+        String shardId = "0";
+        
+        ShardAllocation allocation = new io.clustercontroller.models.ShardAllocation(shardId, indexName);
+        
+        // Mock etcd failure
+        when(mockKv.put(any(ByteSequence.class), any(ByteSequence.class)))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("etcd timeout")));
+        
+        // Verify exception is propagated
+        assertThatThrownBy(() -> store.setActualAllocation(clusterId, indexName, shardId, allocation))
+                .isInstanceOf(Exception.class)
+                .hasMessageContaining("etcd timeout");
+    }
+
     // ------------------------- reflection util -------------------------
 
     private static void setPrivateField(Object target, String fieldName, Object value) throws Exception {

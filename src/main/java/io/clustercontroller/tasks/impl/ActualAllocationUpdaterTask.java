@@ -26,7 +26,7 @@ public class ActualAllocationUpdaterTask implements Task {
         log.info("Executing actual allocation updater task: {}", name);
         
         try {
-            context.getActualAllocationUpdater().updateActualAllocations();
+            context.getActualAllocationUpdater().updateActualAllocations(context.getClusterName());
             return TASK_STATUS_COMPLETED;
         } catch (Exception e) {
             log.error("Failed to execute actual allocation updater task: {}", e.getMessage(), e);

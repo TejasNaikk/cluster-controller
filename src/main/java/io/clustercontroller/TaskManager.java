@@ -94,6 +94,10 @@ public class TaskManager {
     public void start() {
         log.info("Starting task manager");
         isRunning = true;
+        
+        // Bootstrap recurring system tasks
+        bootstrapRecurringTasks();
+        
         scheduler.scheduleWithFixedDelay(
                 this::processTaskLoop,
                 0,
@@ -188,5 +192,43 @@ public class TaskManager {
     private void cleanupOldTasks(List<TaskMetadata> tasks) {
         // TODO: Implement task cleanup logic
         log.debug("Cleaning up old tasks");
+    }
+    
+    /**
+     * Bootstrap recurring system tasks at startup.
+     * Creates the core allocation and orchestration tasks if they don't already exist.
+     */
+    private void bootstrapRecurringTasks() {
+        log.info("Bootstrapping recurring system tasks");
+        
+        try {
+            createRecurringTaskIfNotExists(TASK_ACTION_SHARD_ALLOCATOR, 0);
+            createRecurringTaskIfNotExists(TASK_ACTION_ACTUAL_ALLOCATION_UPDATER, 1);
+            createRecurringTaskIfNotExists(TASK_ACTION_GOAL_STATE_ORCHESTRATOR, 2);
+            
+            log.info("Successfully bootstrapped recurring system tasks");
+        } catch (Exception e) {
+            log.error("Error bootstrapping recurring tasks: {}", e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Create a recurring task if it doesn't already exist.
+     */
+    private void createRecurringTaskIfNotExists(String taskName, int priority) {
+        try {
+            if (getTask(taskName).isPresent()) {
+                log.debug("Task '{}' already exists, skipping creation", taskName);
+                return;
+            }
+            
+            TaskMetadata task = createTask(taskName, "", priority);
+            task.setSchedule(TASK_SCHEDULE_REPEAT);
+            updateTask(task);
+            
+            log.info("Created recurring task: {} (priority: {})", taskName, priority);
+        } catch (Exception e) {
+            log.warn("Failed to create recurring task '{}': {}", taskName, e.getMessage());
+        }
     }
 }
