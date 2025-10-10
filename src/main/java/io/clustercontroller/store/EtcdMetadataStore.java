@@ -1,10 +1,10 @@
 package io.clustercontroller.store;
 
+import io.clustercontroller.election.LeaderElection;
 import io.clustercontroller.models.Index;
+import io.clustercontroller.models.IndexSettings;
 import io.clustercontroller.models.ShardAllocation;
-import io.clustercontroller.config.Constants;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -15,24 +15,23 @@ import io.clustercontroller.models.TaskMetadata;
 import io.clustercontroller.util.EnvironmentUtils;
 import io.etcd.jetcd.*;
 import io.etcd.jetcd.kv.GetResponse;
-import io.etcd.jetcd.kv.PutResponse;
-import io.etcd.jetcd.lease.LeaseGrantResponse;
-import io.etcd.jetcd.lease.LeaseKeepAliveResponse;
+import io.etcd.jetcd.kv.TxnResponse;
+import io.etcd.jetcd.op.Cmp;
+import io.etcd.jetcd.op.CmpTarget;
+import io.etcd.jetcd.op.Op;
+import io.etcd.jetcd.options.DeleteOption;
 import io.etcd.jetcd.options.GetOption;
-import io.etcd.jetcd.options.LeaseOption;
-import io.grpc.stub.StreamObserver;
+import io.etcd.jetcd.options.PutOption;
 import lombok.extern.slf4j.Slf4j;
 
+import jakarta.annotation.PreDestroy;
 import java.nio.charset.StandardCharsets;
-import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static io.clustercontroller.config.Constants.PATH_DELIMITER;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static io.clustercontroller.config.Constants.*;
 
 /**
  * etcd-based implementation of MetadataStore.
@@ -53,8 +52,8 @@ public class EtcdMetadataStore implements MetadataStore {
     private final ObjectMapper objectMapper;
     
     // Leader election fields
-    private final AtomicBoolean isLeader = new AtomicBoolean(false);
     private final String nodeId;
+    private final LeaderElection leaderElection;
     
     /**
      * Private constructor for singleton pattern
@@ -75,7 +74,10 @@ public class EtcdMetadataStore implements MetadataStore {
         // Initialize path resolver
         this.pathResolver = EtcdPathResolver.getInstance();
         
-        log.info("EtcdMetadataStore initialized for cluster: {} with endpoints: {} and nodeId: {}", 
+        // Initialize leader election (controller-level, not cluster-specific)
+        this.leaderElection = new LeaderElection(etcdClient, nodeId);
+        
+        log.info("EtcdMetadataStore initialized with endpoints: {} and nodeId: {}", 
             String.join(",", etcdEndpoints), nodeId);
     }
     
@@ -100,7 +102,10 @@ public class EtcdMetadataStore implements MetadataStore {
         // Initialize path resolver
         this.pathResolver = EtcdPathResolver.getInstance();
         
-        log.info("EtcdMetadataStore initialized for testing with cluster: {} and nodeId: {}", "test-cluster", nodeId);
+        // Initialize leader election for testing (controller-level, not cluster-specific)
+        this.leaderElection = new LeaderElection(etcdClient, nodeId);
+        
+        log.info("EtcdMetadataStore initialized for testing with nodeId: {}", nodeId);
     }
     /**
      * Get singleton instance
@@ -358,34 +363,74 @@ public class EtcdMetadataStore implements MetadataStore {
         return actualStates;
     }
     
-    public Optional<SearchUnitGoalState> getSearchUnitGoalState(String clusterId, String unitName) throws Exception {
+    public SearchUnitGoalState getSearchUnitGoalState(String clusterId, String unitName) throws Exception {
         String key = pathResolver.getSearchUnitGoalStatePath(clusterId, unitName);
         CompletableFuture<GetResponse> getFuture = kvClient.get(ByteSequence.from(key, UTF_8));
         GetResponse response = getFuture.get();
         
         if (response.getKvs().isEmpty()) {
-            return Optional.empty();
+            return null;
         }
         
         String json = response.getKvs().get(0).getValue().toString(UTF_8);
         SearchUnitGoalState goalState = objectMapper.readValue(json, SearchUnitGoalState.class);
         
-        return Optional.of(goalState);
+        return goalState;
     }
     
-    public Optional<SearchUnitActualState> getSearchUnitActualState(String clusterId, String unitName) throws Exception {
+    public SearchUnitActualState getSearchUnitActualState(String clusterId, String unitName) throws Exception {
         String key = pathResolver.getSearchUnitActualStatePath(clusterId, unitName);
         CompletableFuture<GetResponse> getFuture = kvClient.get(ByteSequence.from(key, UTF_8));
         GetResponse response = getFuture.get();
         
         if (response.getKvs().isEmpty()) {
-            return Optional.empty();
+            return null;
         }
         
         String json = response.getKvs().get(0).getValue().toString(UTF_8);
         SearchUnitActualState actualState = objectMapper.readValue(json, SearchUnitActualState.class);
         
-        return Optional.of(actualState);
+        return actualState;
+    }
+    
+    public void setSearchUnitGoalState(String clusterId, String unitName, SearchUnitGoalState goalState) throws Exception {
+        String key = pathResolver.getSearchUnitGoalStatePath(clusterId, unitName);
+        String json = objectMapper.writeValueAsString(goalState);
+        
+        // Use Compare-And-Swap (CAS) pattern with mod_revision for thread-safe updates
+        ByteSequence keyBytes = ByteSequence.from(key, UTF_8);
+        ByteSequence valueBytes = ByteSequence.from(json, UTF_8);
+        
+        // Get current revision to use in CAS operation
+        GetResponse getResponse = kvClient.get(keyBytes).get();
+        long currentRevision = 0;
+        if (getResponse.getCount() > 0) {
+            currentRevision = getResponse.getKvs().get(0).getModRevision();
+        }
+        
+        // Perform atomic CAS operation
+        TxnResponse txnResponse = kvClient.txn()
+            .If(new Cmp(keyBytes, Cmp.Op.EQUAL, CmpTarget.modRevision(currentRevision)))
+            .Then(Op.put(keyBytes, valueBytes, PutOption.DEFAULT))
+            .Else(Op.get(keyBytes, GetOption.DEFAULT))
+            .commit()
+            .get();
+            
+        if (!txnResponse.isSucceeded()) {
+            throw new RuntimeException("Failed to update goal state for " + unitName + " due to concurrent modification. Please retry.");
+        }
+        
+        log.debug("Successfully set goal state for search unit {} using CAS", unitName);
+    }
+    
+    public void setSearchUnitActualState(String clusterId, String unitName, SearchUnitActualState actualState) throws Exception {
+        String key = pathResolver.getSearchUnitActualStatePath(clusterId, unitName);
+        String json = objectMapper.writeValueAsString(actualState);
+        
+        var putFuture = kvClient.put(ByteSequence.from(key, UTF_8), ByteSequence.from(json, UTF_8));
+        putFuture.get();
+        
+        log.debug("Successfully set actual state for search unit {}", unitName);
     }
     // =================================================================
     // INDEX CONFIGURATIONS OPERATIONS
@@ -504,6 +549,49 @@ public class EtcdMetadataStore implements MetadataStore {
         } catch (Exception e) {
             log.error("Failed to set index mappings for {} in etcd: {}", indexName, e.getMessage(), e);
             throw new Exception("Failed to set index mappings in etcd", e);
+        }
+    }
+    
+    @Override
+    public IndexSettings getIndexSettings(String clusterId, String indexName) throws Exception {
+        log.debug("Getting index settings for {} from etcd", indexName);
+        
+        try {
+            String settingsPath = pathResolver.getIndexSettingsPath(clusterId, indexName);
+            GetResponse response = executeEtcdGet(settingsPath);
+            
+            if (response.getCount() == 0) {
+                log.debug("Index settings {} not found in etcd", indexName);
+                return null;
+            }
+            
+            String settingsJson = response.getKvs().get(0).getValue().toString(StandardCharsets.UTF_8);
+            log.debug("Retrieved index settings JSON for {}: {}", indexName, settingsJson);
+            
+            // Parse the JSON to check if it has a "settings" wrapper
+            com.fasterxml.jackson.databind.JsonNode rootNode = objectMapper.readTree(settingsJson);
+            
+            IndexSettings settings;
+            if (rootNode.has("settings")) {
+                // Extract the inner "settings" object
+                com.fasterxml.jackson.databind.JsonNode settingsNode = rootNode.get("settings");
+                settings = objectMapper.treeToValue(settingsNode, IndexSettings.class);
+                log.debug("Extracted settings from nested 'settings' field for {}", indexName);
+            } else {
+                // Direct deserialization if no wrapper
+                settings = objectMapper.treeToValue(rootNode, IndexSettings.class);
+                log.debug("Parsed settings directly for {}", indexName);
+            }
+            
+            log.debug("Successfully parsed index settings for {}: {}", indexName, settings);
+            return settings;
+            
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            log.error("Failed to parse index settings JSON for {} from etcd: {}", indexName, e.getMessage(), e);
+            throw new Exception("Failed to parse index settings JSON from etcd", e);
+        } catch (Exception e) {
+            log.error("Failed to get index settings {} from etcd: {}", indexName, e.getMessage(), e);
+            throw new Exception("Failed to retrieve index settings from etcd", e);
         }
     }
     
@@ -643,13 +731,19 @@ public class EtcdMetadataStore implements MetadataStore {
     public void initialize() throws Exception {
         log.info("Initialize called - already done in constructor");
         // Start leader election process
-        startLeaderElection();
+        leaderElection.startElection();
     }
     
+    @PreDestroy
     public void close() throws Exception {
         log.info("Closing etcd metadata store");
         
         try {
+            // Shutdown leader election first to avoid errors during etcd client closure
+            if (leaderElection != null) {
+                leaderElection.shutdown();
+            }
+            
             if (etcdClient != null) {
                 etcdClient.close();
                 log.info("etcd client closed successfully");
@@ -760,61 +854,25 @@ public class EtcdMetadataStore implements MetadataStore {
     }
 
      // =================================================================
-    // CONTROLLER TASKS OPERATIONS
+    // LEADER ELECTION OPERATIONS
     // =================================================================
-    public CompletableFuture<Boolean> startLeaderElection() {
-        // TODO: Implement distributed locking mechanism and leader election support for multiple OS clusters in future
-        Election election = etcdClient.getElectionClient();
-        String electionKey = io.clustercontroller.config.Constants.DEFAULT_CLUSTER_NAME + ELECTION_KEY_SUFFIX;
-
-        CompletableFuture<Boolean> result = new CompletableFuture<>();
-
-        CompletableFuture.runAsync(() -> {
-            try {
-                ByteSequence electionKeyBytes = ByteSequence.from(electionKey, UTF_8);
-                ByteSequence nodeIdBytes = ByteSequence.from(nodeId, UTF_8);
-
-                long ttlSeconds = LEADER_ELECTION_TTL_SECONDS;
-                LeaseGrantResponse leaseGrant = etcdClient.getLeaseClient()
-                        .grant(ttlSeconds)
-                        .get();
-                long leaseId = leaseGrant.getID();
-
-                etcdClient.getLeaseClient().keepAlive(leaseId, new StreamObserver<LeaseKeepAliveResponse>() {
-                    public void onNext(LeaseKeepAliveResponse res) {}
-                    public void onError(Throwable t) {
-                        log.error("KeepAlive error: {}", t.getMessage());
-                        isLeader.set(false);
-                        result.completeExceptionally(t);
-                    }
-                    public void onCompleted() {
-                        isLeader.set(false);
-                    }
-                });
-
-                election.campaign(electionKeyBytes, leaseId, nodeIdBytes)
-                        .thenAccept(leaderKey -> {
-                            log.info("Node {} is the LEADER.", nodeId);
-                            isLeader.set(true);
-                            result.complete(true);
-                        })
-                        .exceptionally(ex -> {
-                            result.completeExceptionally(ex);
-                            return null;
-                        });
-
-            } catch (Exception e) {
-                log.error("Leader election error", e);
-                result.completeExceptionally(e);
-            }
-        });
-
-        return result;
+    
+    /**
+     * Get the leader election instance for direct access.
+     * 
+     * @return the LeaderElection instance
+     */
+    public LeaderElection getLeaderElection() {
+        return leaderElection;
     }
-
-
+    
+    /**
+     * Check if this node is currently the leader.
+     * 
+     * @return true if this node is the leader, false otherwise
+     */
     public boolean isLeader() {
-        return isLeader.get();
+        return leaderElection.isLeader();
     }
     
     // =================================================================
@@ -854,6 +912,31 @@ public class EtcdMetadataStore implements MetadataStore {
         } catch (Exception e) {
             log.error("Failed to set planned allocation for shard {}/{}: {}", indexName, shardId, e.getMessage(), e);
             throw e;
+        }
+    }
+
+
+
+
+    @Override
+    public void deletePrefix(String clusterId, String prefix) throws Exception {
+        log.debug("Deleting all keys with prefix {} in etcd", prefix);
+
+        try {
+            // Add trailing slash for etcd prefix queries to ensure precise matching
+            String prefixWithSlash = prefix + PATH_DELIMITER;
+            ByteSequence prefixBytes = ByteSequence.from(prefixWithSlash, StandardCharsets.UTF_8);
+            
+            // Use etcd delete with prefix option
+            kvClient.delete(
+                prefixBytes,
+                DeleteOption.newBuilder().withPrefix(prefixBytes).build()
+            ).get(ETCD_OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            
+            log.debug("Successfully deleted all keys with prefix {} in etcd", prefix);
+        } catch (Exception e) {
+            log.error("Failed to delete keys with prefix {} in etcd: {}", prefix, e.getMessage(), e);
+            throw new Exception("Failed to delete keys with prefix in etcd", e);
         }
     }
     

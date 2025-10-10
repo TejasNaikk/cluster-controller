@@ -6,6 +6,7 @@ import io.clustercontroller.models.SearchUnitActualState;
 import io.clustercontroller.models.SearchUnitGoalState;
 import io.clustercontroller.models.ShardAllocation;
 import io.clustercontroller.models.Index;
+import io.clustercontroller.models.IndexSettings;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -91,12 +92,22 @@ public interface MetadataStore {
     /**
      * Get search unit goal state
      */
-    Optional<SearchUnitGoalState> getSearchUnitGoalState(String clusterId, String unitName) throws Exception;
+    SearchUnitGoalState getSearchUnitGoalState(String clusterId, String unitName) throws Exception;
     
     /**
      * Get search unit actual state
      */
-    Optional<SearchUnitActualState> getSearchUnitActualState(String clusterId, String unitName) throws Exception;
+    SearchUnitActualState getSearchUnitActualState(String clusterId, String unitName) throws Exception;
+    
+    /**
+     * Set search unit goal state
+     */
+    void setSearchUnitGoalState(String clusterId, String unitName, SearchUnitGoalState goalState) throws Exception;
+    
+    /**
+     * Set search unit actual state
+     */
+    void setSearchUnitActualState(String clusterId, String unitName, SearchUnitActualState actualState) throws Exception;
     // =================================================================
     // INDEX CONFIGURATIONS OPERATIONS
     // =================================================================
@@ -132,9 +143,19 @@ public interface MetadataStore {
     void setIndexMappings(String clusterId, String indexName, String mappings) throws Exception;
     
     /**
+     * Get index settings
+     */
+    IndexSettings getIndexSettings(String clusterId, String indexName) throws Exception;
+    
+    /**
      * Set index settings
      */
     void setIndexSettings(String clusterId, String indexName, String settings) throws Exception;
+    
+    /**
+     * Delete all keys with the given prefix
+     */
+    void deletePrefix(String clusterId, String prefix) throws Exception;
     
     // =================================================================
     // TEMPLATE OPERATIONS
@@ -194,6 +215,10 @@ public interface MetadataStore {
     void close() throws Exception;
     
     /**
-     * Get the cluster name this metadata store is connected to
+     * Check if this controller instance is the leader.
+     * Only the leader should perform active management operations.
+     * 
+     * @return true if this instance is the leader, false otherwise
      */
+    boolean isLeader();
 }
