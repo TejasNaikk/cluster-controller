@@ -50,7 +50,7 @@ public class ClusterLifecycleManager {
         
         this.healthCheckScheduler = Executors.newScheduledThreadPool(10, r -> {
             Thread t = new Thread(r);
-            t.setName("cluster-health-check-" + t.getId());
+            t.setName("cluster-health-check-" + t.threadId());
             t.setDaemon(true);
             return t;
         });
@@ -70,7 +70,8 @@ public class ClusterLifecycleManager {
         try {
             log.info("Starting management of cluster: {}", clusterId);
             
-            // Create TaskManager for this cluster
+            // Create and start TaskManager for this cluster
+            // TaskManager will automatically bootstrap recurring tasks on start()
             TaskManager taskManager = new TaskManager(
                 metadataStore,
                 taskContext,

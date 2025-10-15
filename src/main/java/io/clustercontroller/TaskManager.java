@@ -92,7 +92,11 @@ public class TaskManager {
     }
     
     public void start() {
-        log.info("Starting task manager");
+        log.info("[Cluster: {}] Starting task manager", clusterName);
+        
+        // Bootstrap standard recurring tasks if they don't exist
+        bootstrapRecurringTasks();
+        
         isRunning = true;
         scheduler.scheduleWithFixedDelay(
                 this::processTaskLoop,
@@ -100,6 +104,49 @@ public class TaskManager {
                 intervalSeconds,
                 TimeUnit.SECONDS
         );
+    }
+    
+    /**
+     * Bootstrap standard recurring tasks needed for normal cluster operation.
+     * These tasks are created automatically if they don't already exist.
+     */
+    private void bootstrapRecurringTasks() {
+        log.info("[Cluster: {}] Bootstrapping recurring tasks", clusterName);
+        
+        try {
+            // 1. Discovery task - discovers search units from actual-state (highest priority)
+            ensureRecurringTask(TASK_ACTION_DISCOVERY, 1, "Discover search units from etcd");
+            
+            // 2. Plan Shard Allocation - plans shard allocation based on discovered nodes
+            ensureRecurringTask(TASK_ACTION_PLAN_SHARD_ALLOCATION, 2, "Plan shard allocation");
+            
+            log.info("[Cluster: {}] Successfully bootstrapped recurring tasks", clusterName);
+        } catch (Exception e) {
+            log.error("[Cluster: {}] Failed to bootstrap recurring tasks: {}", clusterName, e.getMessage(), e);
+            // Don't throw - allow TaskManager to start even if bootstrap fails
+        }
+    }
+    
+    /**
+     * Ensure a recurring task exists, creating it if necessary.
+     */
+    private void ensureRecurringTask(String taskName, int priority, String description) {
+        try {
+            if (getTask(taskName).isPresent()) {
+                log.debug("[Cluster: {}] Task {} already exists", clusterName, taskName);
+                return;
+            }
+            
+            // Create recurring task
+            TaskMetadata task = new TaskMetadata(taskName, priority);
+            task.setSchedule(TASK_SCHEDULE_REPEAT);
+            task.setInput(description);
+            
+            metadataStore.createTask(clusterName, task);
+            log.info("[Cluster: {}] Created recurring task: {} (priority: {})", clusterName, taskName, priority);
+        } catch (Exception e) {
+            log.error("[Cluster: {}] Failed to ensure recurring task {}: {}", clusterName, taskName, e.getMessage());
+        }
     }
     
     public void stop() {
