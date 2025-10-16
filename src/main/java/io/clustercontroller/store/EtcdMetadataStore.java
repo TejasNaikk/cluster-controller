@@ -33,6 +33,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static io.clustercontroller.config.Constants.PATH_DELIMITER;
+import static io.clustercontroller.config.Constants.SUFFIX_ACTUAL_STATE;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
@@ -361,7 +362,7 @@ public class EtcdMetadataStore implements MetadataStore {
             String relativePath = key.substring(prefix.length());
             String[] parts = relativePath.split("/");
 
-            if (parts.length >= 2 && "actual-state".equals(parts[2])) {
+            if (parts.length >= 2 && SUFFIX_ACTUAL_STATE.equals(parts[2])) {
                 String unitName = parts[1];
                 try {
                     SearchUnitActualState actualState = objectMapper.readValue(json, SearchUnitActualState.class);
@@ -532,7 +533,7 @@ public class EtcdMetadataStore implements MetadataStore {
             throw new Exception("Failed to update index config in etcd", e);
         }
     }
-    
+
     public void deleteIndexConfig(String clusterId, String indexName) throws Exception {
         log.info("Deleting index config {} from etcd", indexName);
         

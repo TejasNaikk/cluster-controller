@@ -155,8 +155,13 @@ public class ClusterHealthManager {
        try {
            // Get all search units and their actual states
            Map<String, SearchUnitActualState> actualStates = metadataStore.getAllSearchUnitActualStates(clusterId);
+
+           if (actualStates.isEmpty()) {
+               throw new Exception("No search units found for cluster '" + clusterId + "'");
+           }
+
            List<Index> indices = metadataStore.getAllIndexConfigs(clusterId);
-          
+
            log.info("Found {} search units, {} actual states, {} indices for cluster '{}'",
                    actualStates.size(), actualStates.size(), indices.size(), clusterId);
           
