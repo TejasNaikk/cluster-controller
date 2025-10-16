@@ -354,15 +354,22 @@ public class EtcdMetadataStore implements MetadataStore {
             String json = kv.getValue().toString(UTF_8);
             
             // Parse key to get unit name and check if it's an actual-state key
+            // relativePath example: /unit-name/actual-state
             String relativePath = key.substring(prefix.length());
+            if (relativePath.startsWith("/")) {
+                relativePath = relativePath.substring(1); // Remove leading slash
+            }
             String[] parts = relativePath.split("/");
+            // After removing leading slash: parts[0] = unit-name, parts[1] = actual-state
             if (parts.length >= 2 && "actual-state".equals(parts[1])) {
                 String unitName = parts[0];
+                log.info("Found actual-state for unit: {} (key: {})", unitName, key);
                 try {
                     SearchUnitActualState actualState = objectMapper.readValue(json, SearchUnitActualState.class);
                     actualStates.put(unitName, actualState);
+                    log.info("Successfully parsed actual-state for unit: {}", unitName);
                 } catch (Exception e) {
-                    log.warn("Failed to parse actual state for unit {}: {}", unitName, e.getMessage());
+                    log.warn("Failed to parse actual state for unit {}: {}", unitName, e.getMessage(), e);
                 }
             }
         }
