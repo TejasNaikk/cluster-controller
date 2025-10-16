@@ -2,6 +2,8 @@ package io.clustercontroller.api.handlers;
 
 import io.clustercontroller.api.models.responses.ErrorResponse;
 import io.clustercontroller.health.ClusterHealthManager;
+import io.clustercontroller.models.ClusterHealthInfo;
+import io.clustercontroller.enums.HealthState;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -42,22 +44,25 @@ public class HealthHandler {
      * GET /{clusterId}/_cluster/health
      * GET /{clusterId}/_cluster/health?level=cluster|indices|shards
      */
-    // @GetMapping("/")
-    // public ResponseEntity<Object> getHealth(
-    //         @PathVariable String clusterId,
-    //         String level) {
-    //     try {
-    //         log.info("Getting cluster health for cluster '{}'", clusterId);
-    //         String healthJson = healthManager.getClusterHealth(clusterId, LEVEL_CLUSTER);
-    //         if (healthJson == null) {
-    //             return ResponseEntity.status(404).body(ErrorResponse.notFound("Cluster not found"));
-    //         }
-    //         return ResponseEntity.status(200).build();
-    //     } catch (Exception e) {
-    //         log.error("Error getting cluster health for cluster '{}': {}", clusterId, e.getMessage());
-    //         return ResponseEntity.status(500).body(ErrorResponse.internalError(e.getMessage()));
-    //     }
-    // }
+    @GetMapping("/")
+    public ResponseEntity<Object> getHealth(
+            @PathVariable String clusterId,
+            String level) {
+        try {            
+            String healthJson = healthManager.getClusterHealth(clusterId, LEVEL_CLUSTER);
+            // Parse JSON to check the status
+            ClusterHealthInfo healthInfo = objectMapper.readValue(healthJson, ClusterHealthInfo.class);
+            
+            if (healthInfo.getStatus() == HealthState.RED) {
+                return ResponseEntity.status(500).body(ErrorResponse.internalError("Cluster is unhealthy"));
+            }
+                
+            return ResponseEntity.status(200).build();              
+        } catch (Exception e) {
+            log.error("Error getting cluster health for cluster '{}': {}", clusterId, e.getMessage());
+            return ResponseEntity.status(500).body(ErrorResponse.internalError(e.getMessage()));
+        }
+    }
 
     /**
      * Get overall cluster health status for the specified cluster.
