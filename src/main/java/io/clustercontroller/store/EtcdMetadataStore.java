@@ -339,6 +339,8 @@ public class EtcdMetadataStore implements MetadataStore {
     
     public Map<String, SearchUnitActualState> getAllSearchUnitActualStates(String clusterId) throws Exception {
         String prefix = pathResolver.getSearchUnitsPrefix(clusterId);
+        log.info("Querying etcd for actual-states with clusterId: '{}', prefix: '{}'", clusterId, prefix);
+        
         GetOption option = GetOption.newBuilder()
                 .withPrefix(ByteSequence.from(prefix, UTF_8))
                 .build();
@@ -347,11 +349,14 @@ public class EtcdMetadataStore implements MetadataStore {
                 ByteSequence.from(prefix, UTF_8), option);
         GetResponse response = getFuture.get();
         
+        log.info("Etcd returned {} total keys for prefix '{}'", response.getKvs().size(), prefix);
+        
         Map<String, SearchUnitActualState> actualStates = new HashMap<>();
         
         for (KeyValue kv : response.getKvs()) {
             String key = kv.getKey().toString(UTF_8);
             String json = kv.getValue().toString(UTF_8);
+            log.info("Processing etcd key: {}", key);
             
             // Parse key to get unit name and check if it's an actual-state key
             // relativePath example: /unit-name/actual-state
