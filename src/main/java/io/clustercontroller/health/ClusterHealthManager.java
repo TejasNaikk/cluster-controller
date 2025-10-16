@@ -383,7 +383,7 @@ public class ClusterHealthManager {
                    // Update counts based on shard state
                    if (ShardState.STARTED.equals(shard.getState())) {
                        activeShards++;
-                       if (shard.isPrimary()) {
+                       if (shard.getRole().equals("primary")) {
                            shardHealth.setPrimaryActive(true);
                            shardHealth.setStatus(HealthState.GREEN);
                        } else {
@@ -391,7 +391,7 @@ public class ClusterHealthManager {
                        }
                    } else if (ShardState.RELOCATING.equals(shard.getState())) {
                        relocatingShards++;
-                       if (!shard.isPrimary()) {
+                       if (!shard.getRole().equals("primary")) {
                            shardHealth.setRelocatingReplicas(shardHealth.getRelocatingReplicas() + 1);
                        }
                        if (shardHealth.getStatus() == HealthState.RED) {
@@ -399,7 +399,7 @@ public class ClusterHealthManager {
                        }
                    } else if (ShardState.INITIALIZING.equals(shard.getState())) {
                        initializingShards++;
-                       if (!shard.isPrimary()) {
+                       if (!shard.getRole().equals("primary")) {
                            shardHealth.setInitializingReplicas(shardHealth.getInitializingReplicas() + 1);
                        }
                        if (shardHealth.getStatus() == HealthState.RED) {
@@ -407,7 +407,7 @@ public class ClusterHealthManager {
                        }
                    } else if (ShardState.UNASSIGNED.equals(shard.getState())) {
                        unassignedShards++;
-                       if (!shard.isPrimary()) {
+                       if (!shard.getRole().equals("primary")) {
                            shardHealth.setUnassignedReplicas(shardHealth.getUnassignedReplicas() + 1);
                        }
                    }

@@ -8,6 +8,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import static io.clustercontroller.config.Constants.LEVEL_CLUSTER;
+
 /**
  * REST API handler for cluster health and statistics operations with multi-cluster support.
  *
@@ -24,7 +26,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @Slf4j
 @RestController
-@RequestMapping("/{clusterId}/_cluster")
+@RequestMapping("/{clusterId}")
 public class HealthHandler {
 
     private final ClusterHealthManager healthManager;
@@ -35,12 +37,34 @@ public class HealthHandler {
         this.objectMapper = objectMapper;
     }
 
+     /**
+     * Get overall cluster health status for the specified cluster.
+     * GET /{clusterId}/_cluster/health
+     * GET /{clusterId}/_cluster/health?level=cluster|indices|shards
+     */
+    // @GetMapping("/")
+    // public ResponseEntity<Object> getHealth(
+    //         @PathVariable String clusterId,
+    //         String level) {
+    //     try {
+    //         log.info("Getting cluster health for cluster '{}'", clusterId);
+    //         String healthJson = healthManager.getClusterHealth(clusterId, LEVEL_CLUSTER);
+    //         if (healthJson == null) {
+    //             return ResponseEntity.status(404).body(ErrorResponse.notFound("Cluster not found"));
+    //         }
+    //         return ResponseEntity.status(200).build();
+    //     } catch (Exception e) {
+    //         log.error("Error getting cluster health for cluster '{}': {}", clusterId, e.getMessage());
+    //         return ResponseEntity.status(500).body(ErrorResponse.internalError(e.getMessage()));
+    //     }
+    // }
+
     /**
      * Get overall cluster health status for the specified cluster.
      * GET /{clusterId}/_cluster/health
      * GET /{clusterId}/_cluster/health?level=cluster|indices|shards
      */
-    @GetMapping("/health")
+    @GetMapping("/_cluster/health")
     public ResponseEntity<Object> getClusterHealth(
             @PathVariable String clusterId,
             @RequestParam(value = "level", defaultValue = "cluster") String level) {
@@ -58,7 +82,7 @@ public class HealthHandler {
      * Get health status for a specific index in the specified cluster.
      * GET /{clusterId}/_cluster/health/{index}
      */
-    @GetMapping("/health/{index}")
+    @GetMapping("/_cluster/health/{index}")
     public ResponseEntity<Object> getIndexHealth(
             @PathVariable String clusterId,
             @PathVariable String index,
@@ -77,7 +101,7 @@ public class HealthHandler {
      * Get cluster performance statistics for the specified cluster.
      * GET /{clusterId}/_cluster/stats
      */
-    @GetMapping("/stats")
+    @GetMapping("/_cluster/stats")
     public ResponseEntity<Object> getClusterStats(@PathVariable String clusterId) {
         try {
             log.info("Getting cluster statistics for cluster '{}'", clusterId);
