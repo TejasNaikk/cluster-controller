@@ -24,14 +24,14 @@ public class DiscoveryTask implements Task {
     
     @Override
     public String execute(TaskContext context) {
-        log.info("Executing discovery task: {}", name);
+        log.info("Executing discovery task: {} for cluster: {}", name, context.getClusterName());
         
         try {
-            context.getDiscovery().discoverSearchUnits();
-            log.info("Discovery task completed successfully");
+            context.getDiscovery().discoverSearchUnits(context.getClusterName());
+            log.info("Discovery task completed successfully for cluster: {}", context.getClusterName());
             return TASK_STATUS_COMPLETED;
         } catch (Exception e) {
-            log.error("Failed to execute discovery task: {}", e.getMessage(), e);
+            log.error("Failed to execute discovery task for cluster {}: {}", context.getClusterName(), e.getMessage(), e);
             return TASK_STATUS_FAILED;
         }
     }

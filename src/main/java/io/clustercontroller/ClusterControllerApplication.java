@@ -138,8 +138,9 @@ public class ClusterControllerApplication {
             ActualAllocationUpdater actualAllocationUpdater,
             GoalStateOrchestrator goalStateOrchestrator,
             MetadataStore metadataStore) {
-        // Create Discovery instance but don't expose as separate bean
-        Discovery discovery = new Discovery(metadataStore, config.getClusterName());
+        // Create Discovery instance - it's cluster-agnostic and accepts clusterName per-call
+        Discovery discovery = new Discovery(metadataStore);
+        // Note: clusterName in TaskContext is legacy and not used in multi-cluster mode
         return new TaskContext(config.getClusterName(), indexManager, shardAllocator, actualAllocationUpdater, goalStateOrchestrator, discovery);
     }
 
