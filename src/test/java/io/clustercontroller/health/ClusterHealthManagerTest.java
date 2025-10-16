@@ -199,7 +199,7 @@ class ClusterHealthManagerTest {
         
         SearchUnitActualState.ShardRoutingInfo shardInfo = new SearchUnitActualState.ShardRoutingInfo();
         shardInfo.setShardId(shardId);
-        shardInfo.setPrimary(isPrimary);
+        shardInfo.setRole(isPrimary ? "primary" : "replica");
         shardInfo.setState(state);
         
         Map<String, List<SearchUnitActualState.ShardRoutingInfo>> routing = new HashMap<>();
