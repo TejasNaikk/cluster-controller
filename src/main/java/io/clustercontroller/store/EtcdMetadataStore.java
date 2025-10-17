@@ -256,7 +256,23 @@ public class EtcdMetadataStore implements MetadataStore {
         
         try {
             String unitsPrefix = pathResolver.getSearchUnitsPrefix(clusterId);
-            List<SearchUnit> searchUnits = getAllObjectsByPrefix(unitsPrefix, SearchUnit.class);
+            GetResponse response = executeEtcdPrefixQuery(unitsPrefix);
+            
+            List<SearchUnit> searchUnits = new ArrayList<>();
+            for (var kv : response.getKvs()) {
+                String key = kv.getKey().toString(StandardCharsets.UTF_8);
+                // Only process keys that end with /conf (search unit configuration files)
+                // This filters out /actual-state and other non-config paths
+                if (key.endsWith("/conf")) {
+                    String json = kv.getValue().toString(StandardCharsets.UTF_8);
+                    try {
+                        SearchUnit searchUnit = objectMapper.readValue(json, SearchUnit.class);
+                        searchUnits.add(searchUnit);
+                    } catch (Exception parseException) {
+                        log.warn("Failed to parse search unit config at key {}: {}", key, parseException.getMessage());
+                    }
+                }
+            }
             
             log.debug("Retrieved {} search units from etcd", searchUnits.size());
             return searchUnits;

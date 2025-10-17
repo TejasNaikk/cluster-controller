@@ -265,7 +265,8 @@ public class EtcdMetadataStoreTest {
         String u2 = "{\"name\":\"node2\"}";
 
         GetResponse resp = mockGetResponse(Arrays.asList(
-                mockKv(u1), mockKv(u2)
+                mockKvWithKey("/test-cluster/search-unit/node1/conf", u1),
+                mockKvWithKey("/test-cluster/search-unit/node2/conf", u2)
         ));
         when(mockKv.get(any(ByteSequence.class), any(GetOption.class)))
                 .thenReturn(CompletableFuture.completedFuture(resp));
