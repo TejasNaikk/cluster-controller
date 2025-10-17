@@ -45,24 +45,18 @@ public class HealthHandler {
      * GET /{clusterId}/_cluster/health?level=cluster|indices|shards
      */
     @GetMapping("/")
-    public ResponseEntity<Object> getHealth(
+    public ResponseEntity<Object> getClusterInformation(
             @PathVariable String clusterId,
             String level) {
         try {            
-            String healthJson = healthManager.getClusterHealth(clusterId, LEVEL_CLUSTER);
-            // Parse JSON to check the status
-            ClusterHealthInfo healthInfo = objectMapper.readValue(healthJson, ClusterHealthInfo.class);
-            
-            if (healthInfo.getStatus() == HealthState.RED) {
-                return ResponseEntity.status(500).body(ErrorResponse.internalError("Cluster is unhealthy"));
-            }
-                
-            return ResponseEntity.status(200).build();              
+            log.info("Getting cluster information for cluster '{}'", clusterId);
+            String clusterInformationJson = healthManager.getClusterInformation(clusterId);
+            return ResponseEntity.ok(clusterInformationJson);             
         } catch (Exception e) {
-            log.error("Error getting cluster health for cluster '{}': {}", clusterId, e.getMessage());
+            log.error("Error getting cluster information for cluster '{}': {}", clusterId, e.getMessage());
             return ResponseEntity.status(500).body(ErrorResponse.internalError(e.getMessage()));
         }
-    }
+    }   
 
     /**
      * Get overall cluster health status for the specified cluster.

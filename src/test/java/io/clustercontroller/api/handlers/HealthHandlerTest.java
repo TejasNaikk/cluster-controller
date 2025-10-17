@@ -137,4 +137,57 @@ class HealthHandlerTest {
         assertThat(errorResponse.getReason()).contains("Failed to retrieve index health");
         assertThat(errorResponse.getStatus()).isEqualTo(500);
     }
+
+    @Test
+    void testGetClusterInformation_ClusterLocked_Success() throws Exception {
+        // Given
+        String clusterInfoJson = "{\"cluster_name\":\"test-cluster\",\"name\":\"node-1\"}";
+        when(healthManager.getClusterInformation(testClusterId))
+            .thenReturn(clusterInfoJson);
+
+        // When
+        ResponseEntity<Object> response = healthHandler.getClusterInformation(testClusterId, null);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isEqualTo(clusterInfoJson);
+    }
+
+    @Test
+    void testGetClusterInformation_ClusterNotLocked_ThrowsException() throws Exception {
+        // Given
+        when(healthManager.getClusterInformation(testClusterId))
+            .thenThrow(new Exception("Cluster is not associated with a controller"));
+
+        // When
+        ResponseEntity<Object> response = healthHandler.getClusterInformation(testClusterId, null);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getBody()).isInstanceOf(ErrorResponse.class);
+
+        ErrorResponse errorResponse = (ErrorResponse) response.getBody();
+        assertThat(errorResponse.getError()).isEqualTo("internal_server_error");
+        assertThat(errorResponse.getReason()).contains("Cluster is not associated with a controller");
+        assertThat(errorResponse.getStatus()).isEqualTo(500);
+    }
+
+    @Test
+    void testGetClusterInformation_InternalError() throws Exception {
+        // Given
+        when(healthManager.getClusterInformation(testClusterId))
+            .thenThrow(new RuntimeException("Failed to retrieve cluster information"));
+
+        // When
+        ResponseEntity<Object> response = healthHandler.getClusterInformation(testClusterId, null);
+
+        // Then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getBody()).isInstanceOf(ErrorResponse.class);
+
+        ErrorResponse errorResponse = (ErrorResponse) response.getBody();
+        assertThat(errorResponse.getError()).isEqualTo("internal_server_error");
+        assertThat(errorResponse.getReason()).contains("Failed to retrieve cluster information");
+        assertThat(errorResponse.getStatus()).isEqualTo(500);
+    }
 }
