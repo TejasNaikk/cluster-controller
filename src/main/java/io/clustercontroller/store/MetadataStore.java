@@ -223,4 +223,9 @@ public interface MetadataStore {
      * @return true if this instance is the leader, false otherwise
      */
     boolean isLeader();
+  
+    /**
+     * Check if a lock exists for a cluster.
+     */
+    boolean isClusterLocked(String clusterId);
 }

@@ -956,5 +956,21 @@ public class EtcdMetadataStore implements MetadataStore {
             throw new Exception("Failed to delete keys with prefix in etcd", e);
         }
     }
+
+    /**
+     * Check if a lock exists for a cluster.
+     */
+    public boolean isClusterLocked(String clusterId) {
+        try {
+            String lockPath = pathResolver.getClusterLockPath(clusterId);
+            GetResponse getResponse = kvClient.get(
+                ByteSequence.from(lockPath, UTF_8)
+            ).get(ETCD_OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            return !getResponse.getKvs().isEmpty();
+        } catch (Exception e) {
+            log.error("Failed to check lock for cluster '{}': {}", clusterId, e.getMessage());
+            return false;
+        }
+    }
     
 }

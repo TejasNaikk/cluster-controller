@@ -9,9 +9,11 @@ import io.clustercontroller.models.Index;
 import io.clustercontroller.models.SearchUnit;
 import io.clustercontroller.models.SearchUnitActualState;
 import io.clustercontroller.models.ClusterHealthInfo;
+import io.clustercontroller.models.ClusterInformation;
 import io.clustercontroller.models.IndexHealthInfo;
 import io.clustercontroller.models.ShardHealthInfo;
 import io.clustercontroller.store.MetadataStore;
+import io.clustercontroller.util.EnvironmentUtils;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
@@ -442,5 +444,32 @@ public class ClusterHealthManager {
         log.info("Getting cluster statistics");
         // TODO: Implement cluster statistics aggregation
         throw new UnsupportedOperationException("Cluster stats not yet implemented");
+    }
+
+    /**
+     * Get cluster information for the specified cluster.
+     */
+    public String getClusterInformation(String clusterId) throws Exception {
+        log.info("Getting cluster information for cluster '{}'", clusterId);
+        
+        try {
+            ClusterInformation clusterInfo = new ClusterInformation();
+            clusterInfo.setClusterName(clusterId);
+            clusterInfo.setName(EnvironmentUtils.getRequiredEnv("NODE_NAME"));
+            // TODO: Add the cluster version information
+
+            // Check if cluster is associated with a controller
+            boolean isLocked = metadataStore.isClusterLocked(clusterId);
+            
+            if (isLocked) {
+                log.info("Cluster '{}' is associated with a controller", clusterId);
+                return objectMapper.writeValueAsString(clusterInfo);
+            } else {
+                throw new Exception("Cluster is not associated with a controller");
+            }
+        } catch (Exception e) {
+            log.error("Failed to get cluster information for cluster '{}': {}", clusterId, e.getMessage(), e);
+            throw new Exception("Failed to get cluster information: " + e.getMessage(), e);
+        }
     }
 }

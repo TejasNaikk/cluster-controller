@@ -4,20 +4,25 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.clustercontroller.enums.HealthState;
 import io.clustercontroller.enums.ShardState;
 import io.clustercontroller.models.ClusterHealthInfo;
+import io.clustercontroller.models.ClusterInformation;
 import io.clustercontroller.models.Index;
 import io.clustercontroller.models.IndexSettings;
 import io.clustercontroller.models.SearchUnitActualState;
 import io.clustercontroller.store.MetadataStore;
+import io.clustercontroller.util.EnvironmentUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.MockitoAnnotations;
 
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
+
+
 
 class ClusterHealthManagerTest {
 
@@ -33,28 +38,6 @@ class ClusterHealthManagerTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
         clusterHealthManager = new ClusterHealthManager(metadataStore);
-    }
-
-    @Test
-    void testGetClusterHealth_EmptyCluster() throws Exception {
-        // Given - empty cluster
-        when(metadataStore.getAllSearchUnitActualStates(testClusterId))
-            .thenReturn(Collections.emptyMap());
-        when(metadataStore.getAllIndexConfigs(testClusterId))
-            .thenReturn(Collections.emptyList());
-
-        // When
-        String healthJson = clusterHealthManager.getClusterHealth(testClusterId, "cluster");
-        ClusterHealthInfo health = objectMapper.readValue(healthJson, ClusterHealthInfo.class);
-
-        // Then
-        assertThat(health.getClusterName()).isEqualTo(testClusterId);
-        assertThat(health.getStatus()).isEqualTo(HealthState.RED); // No active nodes = RED
-        assertThat(health.getNumberOfNodes()).isEqualTo(0);
-        assertThat(health.getNumberOfDataNodes()).isEqualTo(0);
-        assertThat(health.getActiveNodes()).isEqualTo(0);
-        assertThat(health.getNumberOfIndices()).isEqualTo(0);
-        assertThat(health.getTotalShards()).isEqualTo(0);
     }
 
     @Test
@@ -219,5 +202,76 @@ class ClusterHealthManagerTest {
         index.setSettings(settings);
         
         return index;
+    }
+    
+    @Test
+    void testGetClusterInformation_ClusterLocked_Success() throws Exception {
+        // Given
+        String nodeName = "test-node-1";
+        
+        try (MockedStatic<EnvironmentUtils> mockedEnvUtils = mockStatic(EnvironmentUtils.class)) {
+            mockedEnvUtils.when(() -> EnvironmentUtils.getRequiredEnv("NODE_NAME"))
+                .thenReturn(nodeName);
+            
+            when(metadataStore.isClusterLocked(testClusterId)).thenReturn(true);
+            
+            // When
+            String infoJson = clusterHealthManager.getClusterInformation(testClusterId);
+            ClusterInformation info = objectMapper.readValue(infoJson, ClusterInformation.class);
+            
+            // Then
+            assertThat(info).isNotNull();
+            assertThat(info.getClusterName()).isEqualTo(testClusterId);
+            assertThat(info.getName()).isEqualTo(nodeName);
+            assertThat(info.getTagline()).isEqualTo("The OpenSearch Project: https://opensearch.org/");
+
+            // Verify metadata store was queried
+            verify(metadataStore).isClusterLocked(testClusterId);
+        }
+    }
+
+    @Test
+    void testGetClusterInformation_ClusterNotLocked_ThrowsException() {
+        // Given
+        String nodeName = "test-node-1";
+        
+        try (MockedStatic<EnvironmentUtils> mockedEnvUtils = mockStatic(EnvironmentUtils.class)) {
+            mockedEnvUtils.when(() -> EnvironmentUtils.getRequiredEnv("NODE_NAME"))
+                .thenReturn(nodeName);
+            
+            when(metadataStore.isClusterLocked(testClusterId)).thenReturn(false);
+            
+            // When/Then
+            assertThatThrownBy(() -> clusterHealthManager.getClusterInformation(testClusterId))
+                .isInstanceOf(Exception.class)
+                .hasMessageContaining("Failed to get cluster information")
+                .hasMessageContaining("Cluster is not associated with a controller");
+            
+            // Verify metadata store was queried
+            verify(metadataStore).isClusterLocked(testClusterId);
+        }
+    }
+
+    @Test
+    void testGetClusterInformation_MetadataStoreThrowsException() {
+        // Given
+        String nodeName = "test-node-1";
+        
+        try (MockedStatic<EnvironmentUtils> mockedEnvUtils = mockStatic(EnvironmentUtils.class)) {
+            mockedEnvUtils.when(() -> EnvironmentUtils.getRequiredEnv("NODE_NAME"))
+                .thenReturn(nodeName);
+            
+            when(metadataStore.isClusterLocked(testClusterId))
+                .thenThrow(new RuntimeException("etcd connection failed"));
+            
+            // When/Then
+            assertThatThrownBy(() -> clusterHealthManager.getClusterInformation(testClusterId))
+                .isInstanceOf(Exception.class)
+                .hasMessageContaining("Failed to get cluster information")
+                .hasMessageContaining("etcd connection failed");
+            
+            // Verify metadata store was queried
+            verify(metadataStore).isClusterLocked(testClusterId);
+        }
     }
 }

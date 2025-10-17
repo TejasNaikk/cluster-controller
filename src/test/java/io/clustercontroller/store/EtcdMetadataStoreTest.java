@@ -895,6 +895,96 @@ public class EtcdMetadataStoreTest {
         verify(mockTxn).commit();
     }
 
+    @Test
+    public void testIsClusterLocked_LockExists() throws Exception {
+        EtcdMetadataStore store = newStore();
+        String clusterId = "test-cluster";
+
+        // Mock path resolver
+        EtcdPathResolver mockPathResolver = mock(EtcdPathResolver.class);
+        when(mockPathResolver.getClusterLockPath(clusterId))
+            .thenReturn("/test-cluster/lock");
+        setPrivateField(store, "pathResolver", mockPathResolver);
+
+        // Mock GetResponse with non-empty key-value pairs (lock exists)
+        KeyValue mockKeyValue = mock(KeyValue.class);
+        GetResponse mockResponse = mock(GetResponse.class);
+        when(mockResponse.getKvs()).thenReturn(List.of(mockKeyValue));
+
+        when(mockKv.get(any(ByteSequence.class)))
+            .thenReturn(CompletableFuture.completedFuture(mockResponse));
+
+        // Execute
+        boolean result = store.isClusterLocked(clusterId);
+
+        // Verify
+        assertThat(result).isTrue();
+        
+        // Verify the get call was made with correct key
+        ArgumentCaptor<ByteSequence> keyCaptor = ArgumentCaptor.forClass(ByteSequence.class);
+        verify(mockKv).get(keyCaptor.capture());
+        
+        String capturedKey = keyCaptor.getValue().toString(UTF_8);
+        assertThat(capturedKey).isEqualTo("/test-cluster/lock");
+    }
+
+    @Test
+    public void testIsClusterLocked_LockDoesNotExist() throws Exception {
+        EtcdMetadataStore store = newStore();
+        String clusterId = "test-cluster";
+
+        // Mock path resolver
+        EtcdPathResolver mockPathResolver = mock(EtcdPathResolver.class);
+        when(mockPathResolver.getClusterLockPath(clusterId))
+            .thenReturn("/test-cluster/lock");
+        setPrivateField(store, "pathResolver", mockPathResolver);
+
+        // Mock GetResponse with empty key-value pairs (lock does not exist)
+        GetResponse mockResponse = mock(GetResponse.class);
+        when(mockResponse.getKvs()).thenReturn(Collections.emptyList());
+
+        when(mockKv.get(any(ByteSequence.class)))
+            .thenReturn(CompletableFuture.completedFuture(mockResponse));
+
+        // Execute
+        boolean result = store.isClusterLocked(clusterId);
+
+        // Verify
+        assertThat(result).isFalse();
+        
+        // Verify the get call was made with correct key
+        ArgumentCaptor<ByteSequence> keyCaptor = ArgumentCaptor.forClass(ByteSequence.class);
+        verify(mockKv).get(keyCaptor.capture());
+        
+        String capturedKey = keyCaptor.getValue().toString(UTF_8);
+        assertThat(capturedKey).isEqualTo("/test-cluster/lock");
+    }
+
+    @Test
+    public void testIsClusterLocked_ExceptionThrown() throws Exception {
+        EtcdMetadataStore store = newStore();
+        String clusterId = "test-cluster";
+
+        // Mock path resolver
+        EtcdPathResolver mockPathResolver = mock(EtcdPathResolver.class);
+        when(mockPathResolver.getClusterLockPath(clusterId))
+            .thenReturn("/test-cluster/lock");
+        setPrivateField(store, "pathResolver", mockPathResolver);
+
+        // Mock etcd failure
+        when(mockKv.get(any(ByteSequence.class)))
+            .thenReturn(CompletableFuture.failedFuture(new RuntimeException("etcd connection timeout")));
+
+        // Execute - should not throw exception, but return false
+        boolean result = store.isClusterLocked(clusterId);
+
+        // Verify - returns false on exception
+        assertThat(result).isFalse();
+        
+        // Verify the get call was attempted
+        verify(mockKv).get(any(ByteSequence.class));
+    }
+
     // ------------------------- reflection util -------------------------
 
     private static void setPrivateField(Object target, String fieldName, Object value) throws Exception {
