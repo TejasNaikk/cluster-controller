@@ -8,24 +8,17 @@ import io.clustercontroller.health.ClusterHealthManager;
 import io.clustercontroller.indices.AliasManager;
 import io.clustercontroller.indices.IndexManager;
 import io.clustercontroller.orchestration.GoalStateOrchestrator;
-import io.clustercontroller.orchestration.GoalStateOrchestrationStrategy;
 import io.clustercontroller.templates.TemplateManager;
 import io.clustercontroller.store.MetadataStore;
 import io.clustercontroller.store.EtcdMetadataStore;
-import io.clustercontroller.tasks.TaskContext;
-import io.clustercontroller.TaskManager;
-import io.clustercontroller.util.EnvironmentUtils;
 import io.etcd.jetcd.Client;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Primary;
-
-import static io.clustercontroller.config.Constants.*;
 
 /**
  * Main Spring Boot application class for the Cluster Controller with multi-cluster support.
@@ -128,21 +121,17 @@ public class ClusterControllerApplication {
     }
 
     /**
-     * TaskContext bean to provide dependencies to tasks.
+     * Discovery bean for cluster topology discovery.
+     * Stateless singleton - accepts clusterName as method parameter.
      */
     @Bean
-    public TaskContext taskContext(
-            ClusterControllerConfig config,
-            IndexManager indexManager,
-            ShardAllocator shardAllocator,
-            ActualAllocationUpdater actualAllocationUpdater,
-            GoalStateOrchestrator goalStateOrchestrator,
-            MetadataStore metadataStore) {
-        // Create Discovery instance - it's cluster-agnostic and accepts clusterName per-call
-        Discovery discovery = new Discovery(metadataStore);
-        // Note: clusterName in TaskContext is legacy and not used in multi-cluster mode
-        return new TaskContext(config.getClusterName(), indexManager, shardAllocator, actualAllocationUpdater, goalStateOrchestrator, discovery);
+    public Discovery discovery(MetadataStore metadataStore) {
+        log.info("Initializing Discovery for multi-cluster support");
+        return new Discovery(metadataStore);
     }
+
+    // Multi-cluster mode: no default TaskContext bean.
+    // TaskContexts are created dynamically per cluster in ClusterLifecycleManager.
 
     /**
      * Expose etcd Client for components that need direct access (e.g., MultiClusterManager)

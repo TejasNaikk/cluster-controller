@@ -1,8 +1,13 @@
 package io.clustercontroller.multicluster.lifecycle;
 
 import io.clustercontroller.TaskManager;
+import io.clustercontroller.allocation.ActualAllocationUpdater;
+import io.clustercontroller.allocation.ShardAllocator;
+import io.clustercontroller.discovery.Discovery;
+import io.clustercontroller.indices.IndexManager;
 import io.clustercontroller.multicluster.lock.ClusterLock;
 import io.clustercontroller.multicluster.lock.DistributedLockManager;
+import io.clustercontroller.orchestration.GoalStateOrchestrator;
 import io.clustercontroller.store.MetadataStore;
 import io.clustercontroller.tasks.TaskContext;
 import lombok.extern.slf4j.Slf4j;
@@ -29,7 +34,11 @@ import java.util.concurrent.TimeUnit;
 public class ClusterLifecycleManager {
     
     private final MetadataStore metadataStore;
-    private final TaskContext taskContext;
+    private final IndexManager indexManager;
+    private final ShardAllocator shardAllocator;
+    private final ActualAllocationUpdater actualAllocationUpdater;
+    private final GoalStateOrchestrator goalStateOrchestrator;
+    private final Discovery discovery;
     private final DistributedLockManager lockManager;
     private final ScheduledExecutorService healthCheckScheduler;
     private final Duration healthCheckInterval;
@@ -39,12 +48,20 @@ public class ClusterLifecycleManager {
     @Autowired
     public ClusterLifecycleManager(
             MetadataStore metadataStore,
-            TaskContext taskContext,
+            IndexManager indexManager,
+            ShardAllocator shardAllocator,
+            ActualAllocationUpdater actualAllocationUpdater,
+            GoalStateOrchestrator goalStateOrchestrator,
+            Discovery discovery,
             DistributedLockManager lockManager,
             @Value("${multi-cluster.health-check-interval:10}") int healthCheckIntervalSeconds) {
         
         this.metadataStore = metadataStore;
-        this.taskContext = taskContext;
+        this.indexManager = indexManager;
+        this.shardAllocator = shardAllocator;
+        this.actualAllocationUpdater = actualAllocationUpdater;
+        this.goalStateOrchestrator = goalStateOrchestrator;
+        this.discovery = discovery;
         this.lockManager = lockManager;
         this.healthCheckInterval = Duration.ofSeconds(healthCheckIntervalSeconds);
         
@@ -69,6 +86,16 @@ public class ClusterLifecycleManager {
         
         try {
             log.info("Starting management of cluster: {}", clusterId);
+            
+            // Build a per-cluster TaskContext with the shared singleton Discovery
+            TaskContext taskContext = new TaskContext(
+                clusterId,                      // dynamic cluster name
+                indexManager,
+                shardAllocator,
+                actualAllocationUpdater,
+                goalStateOrchestrator,
+                discovery                       // shared stateless singleton
+            );
             
             // Create and start TaskManager for this cluster
             // TaskManager will automatically bootstrap recurring tasks on start()

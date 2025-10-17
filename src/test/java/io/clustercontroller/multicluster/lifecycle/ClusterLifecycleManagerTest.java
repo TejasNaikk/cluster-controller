@@ -1,10 +1,14 @@
 package io.clustercontroller.multicluster.lifecycle;
 
 import io.clustercontroller.TaskManager;
+import io.clustercontroller.allocation.ActualAllocationUpdater;
+import io.clustercontroller.allocation.ShardAllocator;
+import io.clustercontroller.discovery.Discovery;
+import io.clustercontroller.indices.IndexManager;
 import io.clustercontroller.multicluster.lock.ClusterLock;
 import io.clustercontroller.multicluster.lock.DistributedLockManager;
+import io.clustercontroller.orchestration.GoalStateOrchestrator;
 import io.clustercontroller.store.MetadataStore;
-import io.clustercontroller.tasks.TaskContext;
 import io.etcd.jetcd.ByteSequence;
 import io.etcd.jetcd.Watch;
 import io.etcd.jetcd.support.CloseableClient;
@@ -27,7 +31,19 @@ class ClusterLifecycleManagerTest {
     private MetadataStore metadataStore;
 
     @Mock
-    private TaskContext taskContext;
+    private IndexManager indexManager;
+
+    @Mock
+    private ShardAllocator shardAllocator;
+
+    @Mock
+    private ActualAllocationUpdater actualAllocationUpdater;
+
+    @Mock
+    private GoalStateOrchestrator goalStateOrchestrator;
+
+    @Mock
+    private Discovery discovery;
 
     @Mock
     private DistributedLockManager lockManager;
@@ -44,7 +60,11 @@ class ClusterLifecycleManagerTest {
     void setUp() {
         lifecycleManager = new ClusterLifecycleManager(
             metadataStore,
-            taskContext,
+            indexManager,
+            shardAllocator,
+            actualAllocationUpdater,
+            goalStateOrchestrator,
+            discovery,
             lockManager,
             30
         );

@@ -9,6 +9,9 @@ import lombok.extern.slf4j.Slf4j;
 
 import static io.clustercontroller.config.Constants.*;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ScheduledExecutorService;
@@ -205,7 +208,15 @@ public class TaskManager {
             Task task = TaskFactory.createTask(taskMetadata);
             String result = task.execute(taskContext);
             
-            taskMetadata.setStatus(result);
+            // Make repeat tasks eligible again by resetting status to pending
+            if (TASK_SCHEDULE_REPEAT.equalsIgnoreCase(taskMetadata.getSchedule())) {
+                taskMetadata.setStatus(TASK_STATUS_PENDING);
+            } else {
+                taskMetadata.setStatus(result);
+            }
+            
+            // Update timestamp so task selection considers recency
+            taskMetadata.setLastUpdated(OffsetDateTime.now(ZoneOffset.UTC));
             updateTask(taskMetadata);
             return result;
             
@@ -222,16 +233,19 @@ public class TaskManager {
     }
     
     private TaskMetadata selectNextTask(List<TaskMetadata> tasks) {
-        // Simple priority-based selection - execute all repeat tasks regardless of status
-        // This prevents priority inversion and task starvation
+        // Select tasks based on "effective time" = lastUpdated + priority weight
+        // This allows repeat tasks to alternate naturally based on priority + age
+        // Lower effective time = higher priority (should run sooner)
         return tasks.stream()
-                .filter(task -> TASK_SCHEDULE_REPEAT.equals(task.getSchedule()) || TASK_STATUS_PENDING.equals(task.getStatus()))
-                .min((t1, t2) -> {
-                    // Compare by priority (lower number = higher priority)
-                    int priorityCompare = Integer.compare(t1.getPriority(), t2.getPriority());
-                    if (priorityCompare != 0) return priorityCompare;
-                    return t1.getLastUpdated().compareTo(t2.getLastUpdated());
-                })
+                .filter(t -> TASK_SCHEDULE_REPEAT.equals(t.getSchedule()) || TASK_STATUS_PENDING.equals(t.getStatus()))
+                .min(Comparator.comparingLong(t -> {
+                    long lastUpdated = t.getLastUpdated() != null 
+                        ? t.getLastUpdated().toInstant().toEpochMilli() 
+                        : 0;
+                    // Weight priority: higher priority (lower number) = run sooner
+                    // Each priority level adds 1 second (1000ms) delay
+                    return lastUpdated + t.getPriority() * 1000L;
+                }))
                 .orElse(null);
     }
     
