@@ -33,6 +33,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static io.clustercontroller.config.Constants.PATH_DELIMITER;
+import static io.clustercontroller.config.Constants.SUFFIX_ACTUAL_STATE;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
@@ -340,6 +341,8 @@ public class EtcdMetadataStore implements MetadataStore {
     // =================================================================
     
     public Map<String, SearchUnitActualState> getAllSearchUnitActualStates(String clusterId) throws Exception {
+        log.info("Getting all search unit actual states from etcd for cluster '{}' in getAllSearchUnitActualStates", clusterId);
+
         String prefix = pathResolver.getSearchUnitsPrefix(clusterId);
         GetOption option = GetOption.newBuilder()
                 .withPrefix(ByteSequence.from(prefix, UTF_8))
@@ -354,12 +357,13 @@ public class EtcdMetadataStore implements MetadataStore {
         for (KeyValue kv : response.getKvs()) {
             String key = kv.getKey().toString(UTF_8);
             String json = kv.getValue().toString(UTF_8);
-            
+
             // Parse key to get unit name and check if it's an actual-state key
             String relativePath = key.substring(prefix.length());
             String[] parts = relativePath.split("/");
-            if (parts.length >= 2 && "actual-state".equals(parts[1])) {
-                String unitName = parts[0];
+
+            if (parts.length >= 2 && SUFFIX_ACTUAL_STATE.equals(parts[2])) {
+                String unitName = parts[1];
                 try {
                     SearchUnitActualState actualState = objectMapper.readValue(json, SearchUnitActualState.class);
                     actualStates.put(unitName, actualState);
@@ -368,8 +372,7 @@ public class EtcdMetadataStore implements MetadataStore {
                 }
             }
         }
-        
-        log.debug("Retrieved {} search unit actual states from etcd", actualStates.size());
+
         return actualStates;
     }
     
@@ -530,7 +533,7 @@ public class EtcdMetadataStore implements MetadataStore {
             throw new Exception("Failed to update index config in etcd", e);
         }
     }
-    
+
     public void deleteIndexConfig(String clusterId, String indexName) throws Exception {
         log.info("Deleting index config {} from etcd", indexName);
         
@@ -951,6 +954,22 @@ public class EtcdMetadataStore implements MetadataStore {
         } catch (Exception e) {
             log.error("Failed to delete keys with prefix {} in etcd: {}", prefix, e.getMessage(), e);
             throw new Exception("Failed to delete keys with prefix in etcd", e);
+        }
+    }
+
+    /**
+     * Check if a lock exists for a cluster.
+     */
+    public boolean isClusterLocked(String clusterId) {
+        try {
+            String lockPath = pathResolver.getClusterLockPath(clusterId);
+            GetResponse getResponse = kvClient.get(
+                ByteSequence.from(lockPath, UTF_8)
+            ).get(ETCD_OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            return !getResponse.getKvs().isEmpty();
+        } catch (Exception e) {
+            log.error("Failed to check lock for cluster '{}': {}", clusterId, e.getMessage());
+            return false;
         }
     }
     
