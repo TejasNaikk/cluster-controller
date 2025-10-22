@@ -146,7 +146,7 @@ class HealthHandlerTest {
             .thenReturn(clusterInfoJson);
 
         // When
-        ResponseEntity<Object> response = healthHandler.getClusterInformation(testClusterId, null);
+        ResponseEntity<Object> response = healthHandler.getClusterInformation(testClusterId);
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -160,7 +160,7 @@ class HealthHandlerTest {
             .thenThrow(new Exception("Cluster is not associated with a controller"));
 
         // When
-        ResponseEntity<Object> response = healthHandler.getClusterInformation(testClusterId, null);
+        ResponseEntity<Object> response = healthHandler.getClusterInformation(testClusterId);
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
@@ -179,7 +179,7 @@ class HealthHandlerTest {
             .thenThrow(new RuntimeException("Failed to retrieve cluster information"));
 
         // When
-        ResponseEntity<Object> response = healthHandler.getClusterInformation(testClusterId, null);
+        ResponseEntity<Object> response = healthHandler.getClusterInformation(testClusterId);
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
