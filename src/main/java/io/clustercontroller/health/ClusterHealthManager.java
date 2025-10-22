@@ -464,19 +464,10 @@ public class ClusterHealthManager {
                 log.debug("Set controller name '{}' for cluster '{}'", assignedController.getController(), clusterId);
             } else {
                 log.warn("No controller assigned to cluster '{}'", clusterId);
-            }
-
-            // TODO: Add the cluster version information
-
-            // Check if cluster is associated with a controller
-            boolean isLocked = metadataStore.isClusterLocked(clusterId);
-            
-            if (isLocked) {
-                log.info("Cluster '{}' is associated with a controller", clusterId);
-                return objectMapper.writeValueAsString(clusterInfo);
-            } else {
                 throw new Exception("Cluster is not associated with a controller");
             }
+            // TODO: Add the cluster version information
+            return objectMapper.writeValueAsString(clusterInfo);
         } catch (Exception e) {
             log.error("Failed to get cluster information for cluster '{}': {}", clusterId, e.getMessage(), e);
             throw new Exception("Failed to get cluster information: " + e.getMessage(), e);
