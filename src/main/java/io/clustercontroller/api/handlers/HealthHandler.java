@@ -20,6 +20,7 @@ import static io.clustercontroller.config.Constants.LEVEL_CLUSTER;
  * levels of granularity (cluster, indices, or shards).
  *
  * Multi-cluster supported operations:
+ * - GET /{clusterId} - Cluster information
  * - GET /{clusterId}/_cluster/health - Overall cluster health status
  * - GET /{clusterId}/_cluster/health/{index} - Health status for specific index
  * - GET /{clusterId}/_cluster/stats - Cluster performance statistics
@@ -40,14 +41,12 @@ public class HealthHandler {
     }
 
      /**
-     * Get overall cluster health status for the specified cluster.
-     * GET /{clusterId}/_cluster/health
-     * GET /{clusterId}/_cluster/health?level=cluster|indices|shards
+     * Get cluster information for the specified cluster.
+     * GET /{clusterId}
      */
     @GetMapping("/")
     public ResponseEntity<Object> getClusterInformation(
-            @PathVariable String clusterId,
-            String level) {
+            @PathVariable String clusterId) {
         try {            
             log.info("Getting cluster information for cluster '{}'", clusterId);
             String clusterInformationJson = healthManager.getClusterInformation(clusterId);
