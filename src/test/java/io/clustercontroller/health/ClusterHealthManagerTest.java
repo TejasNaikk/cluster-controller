@@ -5,21 +5,19 @@ import io.clustercontroller.enums.HealthState;
 import io.clustercontroller.enums.ShardState;
 import io.clustercontroller.models.ClusterHealthInfo;
 import io.clustercontroller.models.ClusterInformation;
+import io.clustercontroller.models.ClusterControllerAssignment;
 import io.clustercontroller.models.Index;
 import io.clustercontroller.models.IndexSettings;
 import io.clustercontroller.models.SearchUnitActualState;
 import io.clustercontroller.store.MetadataStore;
-import io.clustercontroller.util.EnvironmentUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
-import org.mockito.MockedStatic;
 import org.mockito.MockitoAnnotations;
 
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 
@@ -207,71 +205,86 @@ class ClusterHealthManagerTest {
     @Test
     void testGetClusterInformation_ClusterLocked_Success() throws Exception {
         // Given
-        String nodeName = "test-node-1";
+        String controllerName = "controller-1";
+        ClusterControllerAssignment lockMetadata = new ClusterControllerAssignment();
+        lockMetadata.setController(controllerName);
+        lockMetadata.setCluster(testClusterId);
+        lockMetadata.setTimestamp(1761162295265L);
+        lockMetadata.setLease("694d9a0d5e11fca4");
         
-        try (MockedStatic<EnvironmentUtils> mockedEnvUtils = mockStatic(EnvironmentUtils.class)) {
-            mockedEnvUtils.when(() -> EnvironmentUtils.getRequiredEnv("NODE_NAME"))
-                .thenReturn(nodeName);
-            
-            when(metadataStore.isClusterLocked(testClusterId)).thenReturn(true);
-            
-            // When
-            String infoJson = clusterHealthManager.getClusterInformation(testClusterId);
-            ClusterInformation info = objectMapper.readValue(infoJson, ClusterInformation.class);
-            
-            // Then
-            assertThat(info).isNotNull();
-            assertThat(info.getClusterName()).isEqualTo(testClusterId);
-            assertThat(info.getName()).isEqualTo(nodeName);
-            assertThat(info.getTagline()).isEqualTo("The OpenSearch Project: https://opensearch.org/");
+        when(metadataStore.getAssignedController(testClusterId)).thenReturn(lockMetadata);
+        when(metadataStore.isClusterLocked(testClusterId)).thenReturn(true);
+        
+        // When
+        String infoJson = clusterHealthManager.getClusterInformation(testClusterId);
+        ClusterInformation info = objectMapper.readValue(infoJson, ClusterInformation.class);
+        
+        // Then
+        assertThat(info).isNotNull();
+        assertThat(info.getClusterName()).isEqualTo(testClusterId);
+        assertThat(info.getName()).isEqualTo(controllerName);
+        assertThat(info.getTagline()).isEqualTo("The OpenSearch Project: https://opensearch.org/");
 
-            // Verify metadata store was queried
-            verify(metadataStore).isClusterLocked(testClusterId);
-        }
+        // Verify metadata store was queried
+        verify(metadataStore).getAssignedController(testClusterId);
+        verify(metadataStore).isClusterLocked(testClusterId);
     }
 
     @Test
-    void testGetClusterInformation_ClusterNotLocked_ThrowsException() {
+    void testGetClusterInformation_ClusterNotLocked_ThrowsException() throws Exception {
         // Given
-        String nodeName = "test-node-1";
+        ClusterControllerAssignment lockMetadata = new ClusterControllerAssignment();
+        lockMetadata.setController("controller-1");
+        lockMetadata.setCluster(testClusterId);
         
-        try (MockedStatic<EnvironmentUtils> mockedEnvUtils = mockStatic(EnvironmentUtils.class)) {
-            mockedEnvUtils.when(() -> EnvironmentUtils.getRequiredEnv("NODE_NAME"))
-                .thenReturn(nodeName);
-            
-            when(metadataStore.isClusterLocked(testClusterId)).thenReturn(false);
-            
-            // When/Then
-            assertThatThrownBy(() -> clusterHealthManager.getClusterInformation(testClusterId))
-                .isInstanceOf(Exception.class)
-                .hasMessageContaining("Failed to get cluster information")
-                .hasMessageContaining("Cluster is not associated with a controller");
-            
-            // Verify metadata store was queried
-            verify(metadataStore).isClusterLocked(testClusterId);
-        }
+        when(metadataStore.getAssignedController(testClusterId)).thenReturn(lockMetadata);
+        when(metadataStore.isClusterLocked(testClusterId)).thenReturn(false);
+        
+        // When/Then
+        assertThatThrownBy(() -> clusterHealthManager.getClusterInformation(testClusterId))
+            .isInstanceOf(Exception.class)
+            .hasMessageContaining("Failed to get cluster information")
+            .hasMessageContaining("Cluster is not associated with a controller");
+        
+        // Verify metadata store was queried
+        verify(metadataStore).getAssignedController(testClusterId);
+        verify(metadataStore).isClusterLocked(testClusterId);
     }
 
     @Test
-    void testGetClusterInformation_MetadataStoreThrowsException() {
+    void testGetClusterInformation_MetadataStoreThrowsException() throws Exception {
         // Given
-        String nodeName = "test-node-1";
+        when(metadataStore.getAssignedController(testClusterId))
+            .thenThrow(new RuntimeException("etcd connection failed"));
         
-        try (MockedStatic<EnvironmentUtils> mockedEnvUtils = mockStatic(EnvironmentUtils.class)) {
-            mockedEnvUtils.when(() -> EnvironmentUtils.getRequiredEnv("NODE_NAME"))
-                .thenReturn(nodeName);
-            
-            when(metadataStore.isClusterLocked(testClusterId))
-                .thenThrow(new RuntimeException("etcd connection failed"));
-            
-            // When/Then
-            assertThatThrownBy(() -> clusterHealthManager.getClusterInformation(testClusterId))
-                .isInstanceOf(Exception.class)
-                .hasMessageContaining("Failed to get cluster information")
-                .hasMessageContaining("etcd connection failed");
-            
-            // Verify metadata store was queried
-            verify(metadataStore).isClusterLocked(testClusterId);
-        }
+        // When/Then
+        assertThatThrownBy(() -> clusterHealthManager.getClusterInformation(testClusterId))
+            .isInstanceOf(Exception.class)
+            .hasMessageContaining("Failed to get cluster information")
+            .hasMessageContaining("etcd connection failed");
+        
+        // Verify metadata store was queried
+        verify(metadataStore).getAssignedController(testClusterId);
+    }
+
+    @Test
+    void testGetClusterInformation_NoControllerAssigned_Success() throws Exception {
+        // Given - no controller assigned (getAssignedController returns null)
+        when(metadataStore.getAssignedController(testClusterId)).thenReturn(null);
+        when(metadataStore.isClusterLocked(testClusterId)).thenReturn(true);
+        
+        // When
+        String infoJson = clusterHealthManager.getClusterInformation(testClusterId);
+        ClusterInformation info = objectMapper.readValue(infoJson, ClusterInformation.class);
+        
+        // Then
+        assertThat(info).isNotNull();
+        assertThat(info.getClusterName()).isEqualTo(testClusterId);
+        assertThat(info.getName()).isNull(); // No controller name set
+        assertThat(info.getTagline()).isEqualTo("The OpenSearch Project: https://opensearch.org/");
+        
+        // Verify metadata store was queried
+        verify(metadataStore).getAssignedController(testClusterId);
+        verify(metadataStore).isClusterLocked(testClusterId);
     }
 }

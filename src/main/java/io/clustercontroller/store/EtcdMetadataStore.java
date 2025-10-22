@@ -14,6 +14,7 @@ import io.clustercontroller.models.SearchUnit;
 import io.clustercontroller.models.SearchUnitActualState;
 import io.clustercontroller.models.SearchUnitGoalState;
 import io.clustercontroller.models.TaskMetadata;
+import io.clustercontroller.models.ClusterControllerAssignment;
 import io.clustercontroller.util.EnvironmentUtils;
 import io.etcd.jetcd.*;
 import io.etcd.jetcd.kv.GetResponse;
@@ -973,4 +974,29 @@ public class EtcdMetadataStore implements MetadataStore {
         }
     }
     
+    /**
+     * Get the controller ID assigned to a cluster.
+     */
+    @Override
+    public ClusterControllerAssignment getAssignedController(String clusterId) throws Exception {
+        try {
+            String assignmentPath = pathResolver.getClusterAssignedControllerPath(clusterId);
+            GetResponse getResponse = kvClient.get(
+                ByteSequence.from(assignmentPath, UTF_8)
+            ).get(ETCD_OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            
+            if (getResponse.getKvs().isEmpty()) {
+                log.debug("No controller assigned to cluster '{}'", clusterId);
+                return null;
+            }
+            
+            String json = getResponse.getKvs().get(0).getValue().toString(UTF_8);
+            ClusterControllerAssignment clusterControllerAssignment = objectMapper.readValue(json, ClusterControllerAssignment.class);
+            log.debug("Cluster '{}' is assigned to controller '{}'", clusterId, clusterControllerAssignment.getController());
+            return clusterControllerAssignment;
+        } catch (Exception e) {
+            log.error("Failed to get assigned controller for cluster '{}': {}", clusterId, e.getMessage(), e);
+            throw new Exception("Failed to get assigned controller: " + e.getMessage(), e);
+        }
+    }
 }

@@ -12,6 +12,7 @@ import io.clustercontroller.models.ClusterHealthInfo;
 import io.clustercontroller.models.ClusterInformation;
 import io.clustercontroller.models.IndexHealthInfo;
 import io.clustercontroller.models.ShardHealthInfo;
+import io.clustercontroller.models.ClusterControllerAssignment;
 import io.clustercontroller.store.MetadataStore;
 import io.clustercontroller.util.EnvironmentUtils;
 import lombok.extern.slf4j.Slf4j;
@@ -455,7 +456,16 @@ public class ClusterHealthManager {
         try {
             ClusterInformation clusterInfo = new ClusterInformation();
             clusterInfo.setClusterName(clusterId);
-            clusterInfo.setName(EnvironmentUtils.getRequiredEnv("NODE_NAME"));
+            
+            // Get the controller name assigned to this cluster from etcd
+            ClusterControllerAssignment assignedController = metadataStore.getAssignedController(clusterId);
+            if (assignedController != null) {
+                clusterInfo.setName(assignedController.getController());
+                log.debug("Set controller name '{}' for cluster '{}'", assignedController.getController(), clusterId);
+            } else {
+                log.warn("No controller assigned to cluster '{}'", clusterId);
+            }
+
             // TODO: Add the cluster version information
 
             // Check if cluster is associated with a controller
