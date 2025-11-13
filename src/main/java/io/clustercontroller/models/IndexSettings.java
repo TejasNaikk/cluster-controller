@@ -26,4 +26,22 @@ public class IndexSettings {
 
     @JsonProperty("pause_pull_ingestion")
     private Boolean pausePullIngestion;
+
+    @JsonProperty("refresh_interval")
+    private String refreshInterval;
+
+    @JsonProperty("number_of_replicas")
+    private Integer numberOfReplicas;
+
+    @JsonProperty("max_result_window")
+    private Integer maxResultWindow;
+
+    @JsonProperty("remote_store.enabled")
+    private Boolean remoteStoreEnabled;
+
+    @JsonProperty("replication.type")
+    private String replicationType;
+
+    @JsonProperty("remote_store.segment.repository")
+    private String remoteStoreSegmentRepository;
 }
