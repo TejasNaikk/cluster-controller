@@ -16,7 +16,7 @@ import java.util.HashMap;
 @NoArgsConstructor
 public class Index {
     @JsonProperty("id")
-    private String id;
+    private String id = "";
     
     @JsonProperty("index_name")
     private String indexName;
