@@ -738,7 +738,7 @@ public class EtcdMetadataStore implements MetadataStore {
             com.fasterxml.jackson.databind.JsonNode rootNode = objectMapper.readTree(settingsJson);
             
             IndexSettings settings;
-            if (rootNode.has("settings")) {
+            if (rootNode.has("index")) {
                 // Extract the inner "settings" object
                 com.fasterxml.jackson.databind.JsonNode settingsNode = rootNode.get("settings");
                 settings = objectMapper.treeToValue(settingsNode, IndexSettings.class);
