@@ -34,16 +34,4 @@ public class IndexSettings {
 
     @JsonProperty("number_of_replicas")
     private Integer numberOfReplicas;
-
-    @JsonProperty("max_result_window")
-    private Integer maxResultWindow;
-
-    @JsonProperty("remote_store.enabled")
-    private Boolean remoteStoreEnabled;
-
-    @JsonProperty("replication.type")
-    private String replicationType;
-
-    @JsonProperty("remote_store.segment.repository")
-    private String remoteStoreSegmentRepository;
 }
