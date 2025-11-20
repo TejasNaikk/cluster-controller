@@ -327,7 +327,8 @@ class DiscoveryTest {
         SearchUnitActualState state = new SearchUnitActualState();
         state.setNodeName(nodeName);
         state.setAddress(address);
-        state.setPort(port);
+        state.setHttpPort(port);
+        state.setTransportPort(port + 100); // Transport port is typically HTTP port + 100 (TODO: change / check)
         state.setNodeId("node-id-" + nodeName);
         state.setEphemeralId("ephemeral-" + nodeName);
         
