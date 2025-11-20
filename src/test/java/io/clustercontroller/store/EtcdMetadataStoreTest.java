@@ -3,6 +3,7 @@ package io.clustercontroller.store;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.clustercontroller.models.ClusterControllerAssignment;
 import io.clustercontroller.models.Index;
+import io.clustercontroller.models.IndexMetadata;
 import io.clustercontroller.models.IndexSettings;
 import io.clustercontroller.models.SearchUnit;
 import io.clustercontroller.models.SearchUnitGoalState;
