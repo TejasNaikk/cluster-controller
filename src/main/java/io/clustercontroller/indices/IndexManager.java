@@ -212,6 +212,11 @@ public class IndexManager {
             throw new IllegalArgumentException("Index name cannot be null or empty");
         }
 
+          if (!metadataStore.getIndexConfig(clusterId, indexName).isPresent()) {
+            log.warn("GetIndex - Index '{}' not found in cluster '{}', nothing to get", indexName, clusterId);
+            return "";
+        }
+
         // Build response structure matching OpenSearch GET index API format
         Map<String, Object> indexResponse = new HashMap<>();
         
