@@ -247,6 +247,7 @@ public class IndexManager {
         // Add all other indices that share aliases with the requested index. This is needed to switch the alias in unified ingestion.
         addRelatedIndices(clusterId, indexName, indexToAliasesMap, response);
         
+        log.info("GetIndex - Response: {}", response);
         log.info("Successfully retrieved index information for '{}' and {} related indices from cluster '{}'", 
                 indexName, response.size() - 1, clusterId);
         return objectMapper.writeValueAsString(response);
@@ -258,6 +259,7 @@ public class IndexManager {
     private Map<String, List<String>> buildIndexToAliasesMap(String clusterId, TypeMapping mappings) {
         Map<String, List<String>> indexToAliasesMap = new HashMap<>();
         
+        log.info("BuildIndexToAliasesMap - Meta map: {}", mappings.getMeta());
         if (mappings == null || mappings.getMeta() == null) {
             return indexToAliasesMap;
         }
@@ -267,25 +269,30 @@ public class IndexManager {
             Map<String, Object> metaMap = mappings.getMeta();
             Object indexMetadataObj = metaMap.get(INDEX_METADATA);
             if (indexMetadataObj == null) {
+                log.warn("BuildIndexToAliasesMap - No index_metadata found in _meta");
                 return indexToAliasesMap;
             }
             
             IndexMetadata metadata = objectMapper.convertValue(indexMetadataObj, IndexMetadata.class);
             if (metadata == null || metadata.getAliases() == null) {
+                log.warn("BuildIndexToAliasesMap - No aliases found in metadata");
                 return indexToAliasesMap;
             }
                 
             for (IndexMetadata.AliasConfig aliasConfig : metadata.getAliases()) {
                 String aliasName = aliasConfig.getName();
                 if (aliasName == null || aliasName.trim().isEmpty()) {
+                    log.warn("BuildIndexToAliasesMap - Alias name is null or empty");
                     continue;
                 }
                 
                 try {
                     Alias alias = metadataStore.getAlias(clusterId, aliasName);
                     if (alias == null) {
+                        log.warn("BuildIndexToAliasesMap - Alias '{}' not found in etcd", aliasName);
                         continue;
                     }
+                    log.info("BuildIndexToAliasesMap - Alias '{}' found in etcd: {}", aliasName, alias);
                     List<String> targetIndices = alias.getTargetIndicesAsList();
                     // Build index -> aliases map (inverse of alias -> indices)
                     // computeIfAbsent: if index exists, get the list; if not, create a new list
@@ -302,6 +309,7 @@ public class IndexManager {
             log.warn("Failed to build index to aliases map: {}", e.getMessage());
         }
 
+        log.info("BuildIndexToAliasesMap - Index to aliases map: {}", indexToAliasesMap);
         return indexToAliasesMap;
     }
     
@@ -342,13 +350,14 @@ public class IndexManager {
         // Add aliases (OpenSearch format: alias_name -> {})
         Map<String, Object> aliasesMap = new HashMap<>();
         List<String> aliasesForIndex = indexToAliasesMap.get(indexName);
+        log.info("BuildSingleIndexResponse - Aliases for index '{}': {}", indexName, aliasesForIndex);
         if (aliasesForIndex != null) {
             for (String aliasName : aliasesForIndex) {
                 aliasesMap.put(aliasName, new HashMap<>());
             }
         }
         indexResponse.put("aliases", aliasesMap);
-        
+        log.info("BuildSingleIndexResponse - Index response: {}", indexResponse);
         return indexResponse;
     }
     
