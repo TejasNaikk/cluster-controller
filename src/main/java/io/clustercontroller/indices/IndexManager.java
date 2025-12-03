@@ -269,27 +269,27 @@ public class IndexManager {
             Map<String, Object> metaMap = mappings.getMeta();
             Object indexMetadataObj = metaMap.get(INDEX_METADATA);
             if (indexMetadataObj == null) {
-                log.warn("BuildIndexToAliasesMap - No index_metadata found in _meta");
+                log.info("BuildIndexToAliasesMap - No index_metadata found in _meta");
                 return indexToAliasesMap;
             }
             
             IndexMetadata metadata = objectMapper.convertValue(indexMetadataObj, IndexMetadata.class);
             if (metadata == null || metadata.getAliases() == null) {
-                log.warn("BuildIndexToAliasesMap - No aliases found in metadata");
+                log.info("BuildIndexToAliasesMap - No aliases found in metadata");
                 return indexToAliasesMap;
             }
                 
             for (IndexMetadata.AliasConfig aliasConfig : metadata.getAliases()) {
                 String aliasName = aliasConfig.getName();
                 if (aliasName == null || aliasName.trim().isEmpty()) {
-                    log.warn("BuildIndexToAliasesMap - Alias name is null or empty");
+                    log.info("BuildIndexToAliasesMap - Alias name is null or empty");
                     continue;
                 }
                 
                 try {
                     Alias alias = metadataStore.getAlias(clusterId, aliasName);
                     if (alias == null) {
-                        log.warn("BuildIndexToAliasesMap - Alias '{}' not found in etcd", aliasName);
+                        log.info("BuildIndexToAliasesMap - Alias '{}' not found in etcd", aliasName);
                         continue;
                     }
                     log.info("BuildIndexToAliasesMap - Alias '{}' found in etcd: {}", aliasName, alias);
@@ -300,13 +300,13 @@ public class IndexManager {
                     for (String targetIndex : targetIndices) {
                         indexToAliasesMap.computeIfAbsent(targetIndex, k -> new ArrayList<>()).add(aliasName);
                     }
-                    log.debug("Alias '{}' maps to indices: {}", aliasName, targetIndices);
+                    log.info("Alias '{}' maps to indices: {}", aliasName, targetIndices);
                 } catch (Exception e) {
-                    log.warn("Failed to get alias '{}' configuration: {}", aliasName, e.getMessage());
+                    log.info("Failed to get alias '{}' configuration: {}", aliasName, e.getMessage());
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed to build index to aliases map: {}", e.getMessage());
+            log.info("Failed to build index to aliases map: {}", e.getMessage());
         }
 
         log.info("BuildIndexToAliasesMap - Index to aliases map: {}", indexToAliasesMap);
