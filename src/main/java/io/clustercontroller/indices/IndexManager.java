@@ -261,13 +261,18 @@ public class IndexManager {
         
         log.info("BuildIndexToAliasesMap - Meta map: {}", mappings.getMeta());
         if (mappings == null || mappings.getMeta() == null) {
+            log.info("BuildIndexToAliasesMap - Mappings or meta is null, returning empty map");
             return indexToAliasesMap;
         }
+        
+        log.info("BuildIndexToAliasesMap - Starting to process aliases");
         
         try {
             // Unwrap metadata from "index_metadata" key
             Map<String, Object> metaMap = mappings.getMeta();
+            log.info("BuildIndexToAliasesMap - Got metaMap, fetching INDEX_METADATA key: {}", INDEX_METADATA);
             Object indexMetadataObj = metaMap.get(INDEX_METADATA);
+            log.info("BuildIndexToAliasesMap - indexMetadataObj: {}", indexMetadataObj);
             if (indexMetadataObj == null) {
                 log.info("BuildIndexToAliasesMap - No index_metadata found in _meta");
                 return indexToAliasesMap;
@@ -306,7 +311,7 @@ public class IndexManager {
                 }
             }
         } catch (Exception e) {
-            log.info("Failed to build index to aliases map: {}", e.getMessage());
+            log.info("BuildIndexToAliasesMap - EXCEPTION caught: {}", e.getMessage(), e);
         }
 
         log.info("BuildIndexToAliasesMap - Index to aliases map: {}", indexToAliasesMap);
