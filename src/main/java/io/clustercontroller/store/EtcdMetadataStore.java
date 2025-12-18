@@ -1397,7 +1397,7 @@ public class EtcdMetadataStore implements MetadataStore {
         }
     }
     
-    /**
+/**
      * Get the controller ID assigned to a cluster.
      */
     @Override
@@ -1454,6 +1454,95 @@ public class EtcdMetadataStore implements MetadataStore {
         } catch (Exception e) {
             log.error("Failed to get cluster version from registry for '{}': {}", clusterId, e.getMessage(), e);
             throw e;
+        }
+    }
+    
+    // =================================================================
+    // INDEX READINESS OPERATIONS
+    // =================================================================
+    
+    @Override
+    public boolean isIndexReady(String clusterId, String indexName) throws Exception {
+        log.debug("Checking if index {} is ready in cluster {}", indexName, clusterId);
+        
+        try {
+            // 1. Get expected shard count from index config
+            Index indexConfig = getAllIndexConfigs(clusterId).stream()
+                .filter(i -> indexName.equals(i.getIndexName()))
+                .findFirst()
+                .orElse(null);
+            
+            if (indexConfig == null) {
+                log.debug("Index {} not found in cluster {}, not ready", indexName, clusterId);
+                return false;
+            }
+            
+            int expectedShardCount = indexConfig.getSettings().getNumberOfShards();
+            log.debug("Index {} expects {} shards", indexName, expectedShardCount);
+            
+            // 2. Get all actual states from all nodes
+            Map<String, SearchUnitActualState> allActualStates = getAllSearchUnitActualStates(clusterId);
+            
+            if (allActualStates.isEmpty()) {
+                log.debug("No search units found for cluster {}, index {} is not ready", clusterId, indexName);
+                return false;
+            }
+            
+            // 3. Track shard readiness: need docs > 0 + replicated
+            // (STARTED is implied if docs are ingested and replicated)
+            Set<Integer> readyShardIds = new HashSet<>();
+            
+            for (Map.Entry<String, SearchUnitActualState> entry : allActualStates.entrySet()) {
+                String unitName = entry.getKey();
+                SearchUnitActualState actualState = entry.getValue();
+                
+                // Check each shard in the stats
+                for (int shardId = 0; shardId < expectedShardCount; shardId++) {
+                    // Already found a ready copy of this shard on another node
+                    if (readyShardIds.contains(shardId)) {
+                        continue;
+                    }
+                    
+                    // Check 1: Docs are ingested (docCount > 0)
+                    long docCount = actualState.getShardDocCount(indexName, shardId);
+                    if (docCount <= 0) {
+                        continue;
+                    }
+                    
+                    // Check 2: Data is replicated (global_checkpoint == local_checkpoint)
+                    boolean isReplicated = actualState.isShardReplicated(indexName, shardId);
+                    if (!isReplicated) {
+                        log.debug("Index {} shard {} on node {} has docs but not fully replicated", 
+                            indexName, shardId, unitName);
+                        continue;
+                    }
+                    
+                    // Shard passes all checks
+                    readyShardIds.add(shardId);
+                    log.debug("Index {} shard {} is ready on node {} (docs={}, replicated)", 
+                        indexName, shardId, unitName, docCount);
+                }
+            }
+            
+            // 4. Check all expected shards are ready
+            if (readyShardIds.size() < expectedShardCount) {
+                Set<Integer> notReadyShards = new HashSet<>();
+                for (int i = 0; i < expectedShardCount; i++) {
+                    if (!readyShardIds.contains(i)) {
+                        notReadyShards.add(i);
+                    }
+                }
+                log.debug("Index {} is not ready - shards not ready: {}", indexName, notReadyShards);
+                return false;
+            }
+            
+            log.info("Index {} is ready - all {} shards have docs ingested and are replicated", 
+                indexName, expectedShardCount);
+            return true;
+            
+        } catch (Exception e) {
+            log.error("Failed to check if index {} is ready: {}", indexName, e.getMessage(), e);
+            throw new Exception("Failed to check index readiness", e);
         }
     }
 }

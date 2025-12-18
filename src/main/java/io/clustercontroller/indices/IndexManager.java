@@ -792,6 +792,18 @@ public class IndexManager {
     }
     
     /**
+     * Check if an index is ready (all shards have docs ingested and are replicated).
+     * 
+     * @param clusterId the cluster identifier
+     * @param indexName the name of the index to check
+     * @return true if all shards have docs > 0 and are replicated
+     */
+    public boolean isIndexReady(String clusterId, String indexName) throws Exception {
+        log.info("Checking if index '{}' is ready in cluster '{}'", indexName, clusterId);
+        return metadataStore.isIndexReady(clusterId, indexName);
+    }
+
+    /**
      * Data class to hold parsed create index request
      */
     @Data

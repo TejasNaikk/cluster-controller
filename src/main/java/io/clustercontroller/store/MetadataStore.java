@@ -277,6 +277,19 @@ public interface MetadataStore {
     List<Alias> getAllAliases(String clusterId) throws Exception;
     
     // =================================================================
+    // INDEX READINESS OPERATIONS
+    // =================================================================
+    
+    /**
+     * Check if an index is ready (shards have docs ingested and are replicated).
+     * 
+     * @param clusterId the cluster identifier
+     * @param indexName the name of the index to check
+     * @return true if shards have docs > 0 and global_checkpoint == local_checkpoint
+     */
+    boolean isIndexReady(String clusterId, String indexName) throws Exception;
+    
+    // =================================================================
     // CLUSTER OPERATIONS
     // =================================================================
     
