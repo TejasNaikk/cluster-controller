@@ -2,6 +2,7 @@ package io.clustercontroller.api.handlers;
 
 import io.clustercontroller.api.models.requests.IndexRequest;
 import io.clustercontroller.api.models.responses.ErrorResponse;
+import io.clustercontroller.api.models.responses.IndexReadinessResponse;
 import io.clustercontroller.api.models.responses.IndexResponse;
 import io.clustercontroller.indices.IndexManager;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -206,7 +207,7 @@ public class IndexHandler {
         }
     }
 
-      /**
+/**
      * Update index metadata in the specified cluster.
      * PUT /{clusterId}/{index}/_metadata
      */
@@ -228,6 +229,33 @@ public class IndexHandler {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ErrorResponse.badRequest(e.getMessage()));
         } catch (Exception e) {
             log.error("Error updating metadata for index '{}' in cluster '{}': {}", index, clusterId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ErrorResponse.internalError(e.getMessage()));
+        }
+    }
+
+    /**
+     * Check if an index is ready (shards have docs ingested and are replicated).
+     * GET /{clusterId}/{index}/_ready
+     * 
+     * This endpoint is designed to be polled by workflows (e.g., Cadence) to determine
+     * when an index is ready to serve traffic after creation and ingestion.
+     */
+    @GetMapping("/{index}/_ready")
+    public ResponseEntity<Object> isIndexReady(
+            @PathVariable String clusterId,
+            @PathVariable String index) {
+        try {
+            log.info("Checking readiness for index '{}' in cluster '{}'", index, clusterId);
+            boolean isReady = indexManager.isIndexReady(clusterId, index);
+            
+            if (isReady) {
+                return ResponseEntity.ok(IndexReadinessResponse.ready(index));
+            } else {
+                return ResponseEntity.ok(IndexReadinessResponse.notReady(index, 
+                    "Index is not ready - waiting for docs to be ingested and replication to complete"));
+            }
+        } catch (Exception e) {
+            log.error("Error checking readiness for index '{}' in cluster '{}': {}", index, clusterId, e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ErrorResponse.internalError(e.getMessage()));
         }
     }
