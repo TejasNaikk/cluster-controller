@@ -30,6 +30,7 @@ public class ClusterControllerConfig {
     private final long taskIntervalSeconds;
     private final String coordinatorGoalStateGroup;
     private final String coordinatorGoalStateUnit;
+    private final String runtimeEnv;
 
     // Default classpath location
     private static final String DEFAULT_CONFIG_FILE_CLASSPATH = "application.yml";
@@ -44,9 +45,10 @@ public class ClusterControllerConfig {
         this.taskIntervalSeconds = parseTaskIntervalSeconds(config);
         this.coordinatorGoalStateGroup = parseCoordinatorGoalStateGroup(config);
         this.coordinatorGoalStateUnit = parseCoordinatorGoalStateUnit(config);
+        this.runtimeEnv = parseRuntimeEnv(config);
         
-        log.info("Loaded cluster controller config - etcd endpoints: {}, task interval: {}s", 
-                String.join(", ", etcdEndpoints), taskIntervalSeconds);
+        log.info("Loaded cluster controller config - etcd endpoints: {}, task interval: {}s, runtime_env: {}", 
+                String.join(", ", etcdEndpoints), taskIntervalSeconds, runtimeEnv);
     }
 
 
@@ -156,6 +158,17 @@ public class ClusterControllerConfig {
         return COORDINATOR_DEFAULT_UNIT;
     }
     
+    private String parseRuntimeEnv(ConfigModel config) {
+        try {
+            if (config.getRuntime_env() != null && !config.getRuntime_env().isBlank()) {
+                return config.getRuntime_env();
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse runtime_env, using default 'staging': {}", e.getMessage());
+        }
+        return DEFAULT_RUNTIME_ENV;
+    }
+    
     /**
      * Configuration model for the application.yml file.
      */
@@ -165,6 +178,7 @@ public class ClusterControllerConfig {
         private Task task;
         private Controller controller; // Multi-cluster controller config (used by Spring @Value)
         private CoordinatorGoalState coordinator_goal_state;
+        private String runtime_env; // Environment isolation for multi-cluster paths (staging, production, etc.)
     }
     
     @Data

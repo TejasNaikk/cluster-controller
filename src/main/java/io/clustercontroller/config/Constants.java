@@ -12,6 +12,7 @@ public final class Constants {
     // Default configuration values
     public static final String DEFAULT_ETCD_ENDPOINT = "http://localhost:2379";
     public static final long DEFAULT_TASK_INTERVAL_SECONDS = 30L;
+    public static final String DEFAULT_RUNTIME_ENV = "staging";
     
     // Task statuses
     public static final String TASK_STATUS_PENDING = "PENDING";

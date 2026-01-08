@@ -1,4 +1,9 @@
 # Application Configuration
+
+# Runtime environment for multi-cluster path isolation (staging, production, etc.)
+# This is patched at build time for different environments
+runtime_env: staging
+
 etcd:
   endpoints:
     - http://localhost:2379

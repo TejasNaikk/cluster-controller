@@ -15,6 +15,7 @@ import io.clustercontroller.proxy.HttpForwarder;
 import io.clustercontroller.templates.TemplateManager;
 import io.clustercontroller.store.MetadataStore;
 import io.clustercontroller.store.EtcdMetadataStore;
+import io.clustercontroller.store.EtcdPathResolver;
 import io.etcd.jetcd.Client;
 
 import lombok.extern.slf4j.Slf4j;
@@ -64,6 +65,10 @@ public class ClusterControllerApplication {
     public MetadataStore metadataStore(ClusterControllerConfig config) {
         log.info("Initializing cluster-agnostic MetadataStore connection to etcd");
         try {
+            // Configure EtcdPathResolver with runtime environment for path isolation
+            EtcdPathResolver.getInstance().setRuntimeEnv(config.getRuntimeEnv());
+            log.info("EtcdPathResolver configured with runtime_env: {}", config.getRuntimeEnv());
+            
             EtcdMetadataStore store = EtcdMetadataStore.getInstance(config.getEtcdEndpoints());
             // Configure coordinator goal state path from YAML config
             store.setCoordinatorGoalStateLocation(
