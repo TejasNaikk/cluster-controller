@@ -131,12 +131,12 @@ public class ControllerRegistry {
             Set<String> controllers = new HashSet<>();
             for (KeyValue kv : response.getKvs()) {
                 String path = kv.getKey().toString(UTF_8);
-                // Extract controller ID from path: /multi-cluster/controllers/{id}/heartbeat
+                // Extract controller ID from path: /multi-cluster/<env>/controllers/{id}/heartbeat
                 // Only include paths that end with /heartbeat
                 if (path.endsWith(HEARTBEAT_SUFFIX)) {
                     String[] parts = path.split("/");
-                    if (parts.length >= 4) {
-                        controllers.add(parts[3]);
+                    if (parts.length >= 5) {
+                        controllers.add(parts[4]);
                     }
                 }
             }
