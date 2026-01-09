@@ -202,7 +202,6 @@ class ActualAllocationUpdaterCleanupTest {
     private SearchUnit createSearchUnit(String unitName) {
         SearchUnit unit = new SearchUnit();
         unit.setName(unitName);
-        unit.setStateAdmin("NORMAL"); // Required for collectActualAllocations
         return unit;
     }
     
