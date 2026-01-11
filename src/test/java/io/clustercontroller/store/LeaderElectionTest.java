@@ -1,5 +1,6 @@
 package io.clustercontroller.store;
 
+import io.clustercontroller.util.EnvironmentUtils;
 import io.etcd.jetcd.*;
 import io.etcd.jetcd.election.CampaignResponse;
 import io.etcd.jetcd.kv.GetResponse;
@@ -53,6 +54,10 @@ class LeaderElectionTest {
 
     @BeforeEach
     void setUp() {
+        // Initialize EtcdPathResolver for tests
+        EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
+        new EtcdPathResolver();
+        
         // Reset singleton instance before each test
         EtcdMetadataStore.resetInstance();
         

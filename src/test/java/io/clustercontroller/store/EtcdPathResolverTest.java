@@ -1,5 +1,6 @@
 package io.clustercontroller.store;
 
+import io.clustercontroller.util.EnvironmentUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -12,7 +13,10 @@ class EtcdPathResolverTest {
 
     @BeforeEach
     void setUp() {
-        pathResolver = EtcdPathResolver.getInstance();
+        // Set up test environment before creating the resolver
+        EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
+        // Create instance manually (in production, Spring does this)
+        pathResolver = new EtcdPathResolver();
     }
 
     @Test
@@ -148,26 +152,12 @@ class EtcdPathResolverTest {
     void testSetRuntimeEnv() {
         String originalEnv = pathResolver.getRuntimeEnv();
         try {
-            pathResolver.setRuntimeEnv("production");
+            EnvironmentUtils.setForTesting("controller.runtime_env", "production");
             assertThat(pathResolver.getRuntimeEnv()).isEqualTo("production");
         } finally {
             // Restore original to not affect other tests
-            pathResolver.setRuntimeEnv(originalEnv);
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
         }
-    }
-
-    @Test
-    void testSetRuntimeEnvIgnoresNull() {
-        String originalEnv = pathResolver.getRuntimeEnv();
-        pathResolver.setRuntimeEnv(null);
-        assertThat(pathResolver.getRuntimeEnv()).isEqualTo(originalEnv);
-    }
-
-    @Test
-    void testSetRuntimeEnvIgnoresBlank() {
-        String originalEnv = pathResolver.getRuntimeEnv();
-        pathResolver.setRuntimeEnv("   ");
-        assertThat(pathResolver.getRuntimeEnv()).isEqualTo(originalEnv);
     }
 
     // =================================================================
@@ -178,11 +168,11 @@ class EtcdPathResolverTest {
     void testGetMultiClusterRootIncludesEnv() {
         String originalEnv = pathResolver.getRuntimeEnv();
         try {
-            pathResolver.setRuntimeEnv("staging");
+            EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
             String path = pathResolver.getMultiClusterRoot();
             assertThat(path).isEqualTo("/multi-cluster/staging");
         } finally {
-            pathResolver.setRuntimeEnv(originalEnv);
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
         }
     }
 
@@ -190,11 +180,11 @@ class EtcdPathResolverTest {
     void testGetControllerHeartbeatPathIncludesEnv() {
         String originalEnv = pathResolver.getRuntimeEnv();
         try {
-            pathResolver.setRuntimeEnv("production");
+            EnvironmentUtils.setForTesting("controller.runtime_env", "production");
             String path = pathResolver.getControllerHeartbeatPath("controller-1");
             assertThat(path).isEqualTo("/multi-cluster/production/controllers/controller-1/heartbeat");
         } finally {
-            pathResolver.setRuntimeEnv(originalEnv);
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
         }
     }
 
@@ -202,11 +192,11 @@ class EtcdPathResolverTest {
     void testGetControllerAssignmentPathIncludesEnv() {
         String originalEnv = pathResolver.getRuntimeEnv();
         try {
-            pathResolver.setRuntimeEnv("staging");
+            EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
             String path = pathResolver.getControllerAssignmentPath("controller-1", "cluster-a");
             assertThat(path).isEqualTo("/multi-cluster/staging/controllers/controller-1/assigned/cluster-a");
         } finally {
-            pathResolver.setRuntimeEnv(originalEnv);
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
         }
     }
 
@@ -214,11 +204,11 @@ class EtcdPathResolverTest {
     void testGetClusterLockPathIncludesEnv() {
         String originalEnv = pathResolver.getRuntimeEnv();
         try {
-            pathResolver.setRuntimeEnv("production");
+            EnvironmentUtils.setForTesting("controller.runtime_env", "production");
             String path = pathResolver.getClusterLockPath("cluster-a");
             assertThat(path).isEqualTo("/multi-cluster/production/locks/clusters/cluster-a");
         } finally {
-            pathResolver.setRuntimeEnv(originalEnv);
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
         }
     }
 
@@ -226,11 +216,11 @@ class EtcdPathResolverTest {
     void testGetClusterRegistryPathIncludesEnv() {
         String originalEnv = pathResolver.getRuntimeEnv();
         try {
-            pathResolver.setRuntimeEnv("staging");
+            EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
             String path = pathResolver.getClusterRegistryPath("cluster-a");
             assertThat(path).isEqualTo("/multi-cluster/staging/clusters/cluster-a/metadata");
         } finally {
-            pathResolver.setRuntimeEnv(originalEnv);
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
         }
     }
 
@@ -238,11 +228,11 @@ class EtcdPathResolverTest {
     void testGetClusterAssignedControllerPathIncludesEnv() {
         String originalEnv = pathResolver.getRuntimeEnv();
         try {
-            pathResolver.setRuntimeEnv("production");
+            EnvironmentUtils.setForTesting("controller.runtime_env", "production");
             String path = pathResolver.getClusterAssignedControllerPath("cluster-a");
             assertThat(path).isEqualTo("/multi-cluster/production/clusters/cluster-a/assigned-to");
         } finally {
-            pathResolver.setRuntimeEnv(originalEnv);
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
         }
     }
 
@@ -250,11 +240,11 @@ class EtcdPathResolverTest {
     void testGetControllersPrefixIncludesEnv() {
         String originalEnv = pathResolver.getRuntimeEnv();
         try {
-            pathResolver.setRuntimeEnv("staging");
+            EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
             String path = pathResolver.getControllersPrefix();
             assertThat(path).isEqualTo("/multi-cluster/staging/controllers");
         } finally {
-            pathResolver.setRuntimeEnv(originalEnv);
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
         }
     }
 
@@ -262,11 +252,11 @@ class EtcdPathResolverTest {
     void testGetClustersPrefixIncludesEnv() {
         String originalEnv = pathResolver.getRuntimeEnv();
         try {
-            pathResolver.setRuntimeEnv("production");
+            EnvironmentUtils.setForTesting("controller.runtime_env", "production");
             String path = pathResolver.getClustersPrefix();
             assertThat(path).isEqualTo("/multi-cluster/production/clusters");
         } finally {
-            pathResolver.setRuntimeEnv(originalEnv);
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
         }
     }
 
@@ -274,17 +264,17 @@ class EtcdPathResolverTest {
     void testDifferentEnvsProduceDifferentPaths() {
         String originalEnv = pathResolver.getRuntimeEnv();
         try {
-            pathResolver.setRuntimeEnv("staging");
+            EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
             String stagingPath = pathResolver.getClusterLockPath("cluster-a");
             
-            pathResolver.setRuntimeEnv("production");
+            EnvironmentUtils.setForTesting("controller.runtime_env", "production");
             String productionPath = pathResolver.getClusterLockPath("cluster-a");
             
             assertThat(stagingPath).isNotEqualTo(productionPath);
             assertThat(stagingPath).contains("/staging/");
             assertThat(productionPath).contains("/production/");
         } finally {
-            pathResolver.setRuntimeEnv(originalEnv);
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
         }
     }
 }

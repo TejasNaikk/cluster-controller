@@ -4,8 +4,10 @@ import io.clustercontroller.models.Alias;
 import io.clustercontroller.models.IndexMetadata;
 import io.clustercontroller.models.IndexSettings;
 import io.clustercontroller.models.TypeMapping;
+import io.clustercontroller.store.EtcdPathResolver;
 import io.clustercontroller.store.MetadataStore;
 import io.clustercontroller.templates.TemplateManager;
+import io.clustercontroller.util.EnvironmentUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +40,10 @@ class IndexManagerTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        // Initialize EtcdPathResolver for tests
+        EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
+        new EtcdPathResolver();
+        
         // Mock template manager to return empty list by default (no matching templates)
         // Use lenient() to avoid UnnecessaryStubbingException in tests that don't create indices
         lenient().when(templateManager.findMatchingTemplates(any(), any())).thenReturn(new ArrayList<>());

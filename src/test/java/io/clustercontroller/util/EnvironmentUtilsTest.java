@@ -1,66 +1,102 @@
 package io.clustercontroller.util;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.env.Environment;
+
+import java.lang.reflect.Field;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Tests for EnvironmentUtils
  */
+@ExtendWith(MockitoExtension.class)
 class EnvironmentUtilsTest {
 
-    @Test
-    void testGetRequiredEnvWithValidValue() {
-        // Test with an environment variable that should exist (PATH is standard)
-        String path = EnvironmentUtils.getRequiredEnv("PATH");
-        assertNotNull(path);
-        assertFalse(path.trim().isEmpty());
+    @Mock
+    private Environment mockEnvironment;
+
+    @BeforeEach
+    void setUp() {
+        EnvironmentUtils.clearTestOverrides();
     }
 
     @Test
-    void testGetRequiredEnvWithMissingValue() {
-        // Test with a non-existent environment variable
+    void testGetWithValidValue() throws Exception {
+        // Set up mock environment
+        setSpringEnvironment(mockEnvironment);
+        when(mockEnvironment.getProperty("test.key")).thenReturn("test-value");
+        
+        String result = EnvironmentUtils.get("test.key");
+        
+        assertEquals("test-value", result);
+        verify(mockEnvironment).getProperty("test.key");
+    }
+
+    @Test
+    void testGetWithMissingValue() throws Exception {
+        // Set up mock environment
+        setSpringEnvironment(mockEnvironment);
+        when(mockEnvironment.getProperty("missing.key")).thenReturn(null);
+        
         IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
-                () -> EnvironmentUtils.getRequiredEnv("NON_EXISTENT_ENV_VAR_12345")
+                () -> EnvironmentUtils.get("missing.key")
         );
         
-        assertTrue(exception.getMessage().contains("NON_EXISTENT_ENV_VAR_12345"));
-        assertTrue(exception.getMessage().contains("not set or is empty"));
+        assertTrue(exception.getMessage().contains("missing.key"));
+        assertTrue(exception.getMessage().contains("not set"));
     }
 
     @Test
-    void testGetEnvWithValidValue() {
-        // Test with an environment variable that should exist
-        String path = EnvironmentUtils.getEnv("PATH", "default-value");
-        assertNotNull(path);
-        assertFalse(path.trim().isEmpty());
-        assertNotEquals("default-value", path);
-    }
-
-    @Test
-    void testGetEnvWithMissingValue() {
-        // Test with a non-existent environment variable
-        String result = EnvironmentUtils.getEnv("NON_EXISTENT_ENV_VAR_12345", "my-default");
-        assertEquals("my-default", result);
-    }
-
-    @Test
-    void testGetEnvWithNullDefault() {
-        // Test with null default value
-        String result = EnvironmentUtils.getEnv("NON_EXISTENT_ENV_VAR_12345", null);
-        assertNull(result);
-    }
-
-    @Test
-    void testTrimmingBehavior() {
-        // Since we can't easily set environment variables in tests,
-        // we test the trimming behavior indirectly by verifying
-        // that existing env vars are trimmed (though they usually don't have whitespace)
-        String path = EnvironmentUtils.getEnv("PATH", "default");
+    void testGetWithEmptyValue() throws Exception {
+        // Set up mock environment
+        setSpringEnvironment(mockEnvironment);
+        when(mockEnvironment.getProperty("empty.key")).thenReturn("   ");
         
-        // The trimming should not change valid paths, but ensures consistency
-        assertNotNull(path);
-        assertEquals(path, path.trim());
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> EnvironmentUtils.get("empty.key")
+        );
+        
+        assertTrue(exception.getMessage().contains("empty.key"));
+    }
+
+    @Test
+    void testGetTrimsValue() throws Exception {
+        // Set up mock environment
+        setSpringEnvironment(mockEnvironment);
+        when(mockEnvironment.getProperty("trim.key")).thenReturn("  value-with-spaces  ");
+        
+        String result = EnvironmentUtils.get("trim.key");
+        
+        assertEquals("value-with-spaces", result);
+    }
+
+    @Test
+    void testGetThrowsWhenSpringNotInitialized() throws Exception {
+        // Clear Spring environment
+        setSpringEnvironment(null);
+        
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> EnvironmentUtils.get("any.key")
+        );
+        
+        assertTrue(exception.getMessage().contains("not initialized"));
+    }
+
+    /**
+     * Helper to set the static springEnvironment field for testing
+     */
+    private void setSpringEnvironment(Environment env) throws Exception {
+        Field field = EnvironmentUtils.class.getDeclaredField("springEnvironment");
+        field.setAccessible(true);
+        field.set(null, env);
     }
 }
