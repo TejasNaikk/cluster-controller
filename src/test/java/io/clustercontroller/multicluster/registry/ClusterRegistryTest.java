@@ -54,17 +54,17 @@ class ClusterRegistryTest {
     @Test
     void testListClusters_ReturnsClusterIds() throws Exception {
         // Given
-        String prefix = "/multi-cluster/clusters/";
+        String prefix = "/multi-cluster/staging/clusters/";
         when(pathResolver.getClustersPrefix()).thenReturn(prefix);
         
         KeyValue kv1 = mock(KeyValue.class);
-        when(kv1.getKey()).thenReturn(ByteSequence.from("/multi-cluster/clusters/cluster-1/metadata", UTF_8));
+        when(kv1.getKey()).thenReturn(ByteSequence.from("/multi-cluster/staging/clusters/cluster-1/metadata", UTF_8));
         
         KeyValue kv2 = mock(KeyValue.class);
-        when(kv2.getKey()).thenReturn(ByteSequence.from("/multi-cluster/clusters/cluster-2/metadata", UTF_8));
+        when(kv2.getKey()).thenReturn(ByteSequence.from("/multi-cluster/staging/clusters/cluster-2/metadata", UTF_8));
         
         KeyValue kv3 = mock(KeyValue.class);
-        when(kv3.getKey()).thenReturn(ByteSequence.from("/multi-cluster/clusters/cluster-3/metadata", UTF_8));
+        when(kv3.getKey()).thenReturn(ByteSequence.from("/multi-cluster/staging/clusters/cluster-3/metadata", UTF_8));
         
         GetResponse getResponse = mock(GetResponse.class);
         when(getResponse.getKvs()).thenReturn(List.of(kv1, kv2, kv3));
@@ -83,7 +83,7 @@ class ClusterRegistryTest {
     @Test
     void testListClusters_ReturnsEmptyOnError() {
         // Given
-        String prefix = "/multi-cluster/clusters/";
+        String prefix = "/multi-cluster/staging/clusters/";
         when(pathResolver.getClustersPrefix()).thenReturn(prefix);
         
         when(kvClient.get(any(ByteSequence.class), any(GetOption.class)))
@@ -99,17 +99,17 @@ class ClusterRegistryTest {
     @Test
     void testListClusters_HandlesInvalidPaths() throws Exception {
         // Given
-        String prefix = "/multi-cluster/clusters/";
+        String prefix = "/multi-cluster/staging/clusters/";
         when(pathResolver.getClustersPrefix()).thenReturn(prefix);
         
         KeyValue kv1 = mock(KeyValue.class);
-        when(kv1.getKey()).thenReturn(ByteSequence.from("/multi-cluster/clusters/cluster-1/metadata", UTF_8));
+        when(kv1.getKey()).thenReturn(ByteSequence.from("/multi-cluster/staging/clusters/cluster-1/metadata", UTF_8));
         
         KeyValue kv2 = mock(KeyValue.class);
         when(kv2.getKey()).thenReturn(ByteSequence.from("/invalid/path", UTF_8)); // Invalid path
         
         KeyValue kv3 = mock(KeyValue.class);
-        when(kv3.getKey()).thenReturn(ByteSequence.from("/multi-cluster/clusters/", UTF_8)); // Too short
+        when(kv3.getKey()).thenReturn(ByteSequence.from("/multi-cluster/staging/clusters/", UTF_8)); // Too short
         
         GetResponse getResponse = mock(GetResponse.class);
         when(getResponse.getKvs()).thenReturn(List.of(kv1, kv2, kv3));
@@ -127,7 +127,7 @@ class ClusterRegistryTest {
     @Test
     void testWatchClusters_TriggersCallbackOnChange() {
         // Given
-        String prefix = "/multi-cluster/clusters/";
+        String prefix = "/multi-cluster/staging/clusters/";
         when(pathResolver.getClustersPrefix()).thenReturn(prefix);
         
         // Capture the watch callback

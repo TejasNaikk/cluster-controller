@@ -1,7 +1,11 @@
 package io.clustercontroller.store;
 
 import java.nio.file.Paths;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Component;
+import lombok.extern.slf4j.Slf4j;
+
+import io.clustercontroller.util.EnvironmentUtils;
 
 import static io.clustercontroller.config.Constants.*;
 
@@ -9,22 +13,38 @@ import static io.clustercontroller.config.Constants.*;
  * Centralized etcd path resolver for all metadata keys with multi-cluster support.
  * Provides consistent path structure for tasks, search units, indices, and other cluster metadata.
  * All methods accept dynamic cluster names to support multi-cluster operations.
- * Stateless singleton - no cluster-specific state stored.
+ * 
+ * Multi-cluster coordination paths are isolated by runtime environment (staging, production, etc.)
+ * to prevent controllers from different environments from interfering with each other.
  */
+@Slf4j
 @Component
+@DependsOn("environmentUtils")
 public class EtcdPathResolver {
     
     private static final String PATH_DELIMITER = "/";
     
-    // Singleton instance - stateless
-    private static final EtcdPathResolver INSTANCE = new EtcdPathResolver();
+    // Singleton instance
+    private static EtcdPathResolver INSTANCE;
     
-    private EtcdPathResolver() {
-        // Private constructor for singleton
+    public EtcdPathResolver() {
+        INSTANCE = this;
+        log.info("EtcdPathResolver initialized");
     }
     
     public static EtcdPathResolver getInstance() {
+        if (INSTANCE == null) {
+            throw new IllegalStateException("EtcdPathResolver not initialized. Ensure Spring context is loaded.");
+        }
         return INSTANCE;
+    }
+    
+    /**
+     * Get the current runtime environment from config.
+     * Package-private for testing.
+     */
+    String getRuntimeEnv() {
+        return EnvironmentUtils.get("controller.runtime_env");
     }
     
     // =================================================================
@@ -243,69 +263,70 @@ public class EtcdPathResolver {
     
     // =================================================================
     // MULTI-CLUSTER COORDINATION PATHS
+    // All paths include runtime_env to isolate different environments
     // =================================================================
     
     /**
-     * Get multi-cluster root path
-     * Pattern: /multi-cluster
+     * Get multi-cluster root path with environment isolation
+     * Pattern: /multi-cluster/<runtime_env>
      */
     public String getMultiClusterRoot() {
-        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER).toString();
+        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, getRuntimeEnv()).toString();
     }
     
     /**
      * Get controller heartbeat path
-     * Pattern: /multi-cluster/controllers/<controller-id>/heartbeat
+     * Pattern: /multi-cluster/<runtime_env>/controllers/<controller-id>/heartbeat
      */
     public String getControllerHeartbeatPath(String controllerId) {
-        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, PATH_CONTROLLERS, controllerId, PATH_HEARTBEAT).toString();
+        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, getRuntimeEnv(), PATH_CONTROLLERS, controllerId, PATH_HEARTBEAT).toString();
     }
     
     /**
      * Get controller assignment path
-     * Pattern: /multi-cluster/controllers/<controller-id>/assigned/<cluster-id>
+     * Pattern: /multi-cluster/<runtime_env>/controllers/<controller-id>/assigned/<cluster-id>
      */
     public String getControllerAssignmentPath(String controllerId, String clusterId) {
-        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, PATH_CONTROLLERS, controllerId, PATH_ASSIGNED, clusterId).toString();
+        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, getRuntimeEnv(), PATH_CONTROLLERS, controllerId, PATH_ASSIGNED, clusterId).toString();
     }
     
     /**
      * Get cluster lock path
-     * Pattern: /multi-cluster/locks/clusters/<cluster-id>
+     * Pattern: /multi-cluster/<runtime_env>/locks/clusters/<cluster-id>
      */
     public String getClusterLockPath(String clusterId) {
-        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, PATH_LOCKS, PATH_CLUSTERS, clusterId).toString();
+        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, getRuntimeEnv(), PATH_LOCKS, PATH_CLUSTERS, clusterId).toString();
     }
     
     /**
      * Get cluster registry path
-     * Pattern: /multi-cluster/clusters/<cluster-id>/metadata
+     * Pattern: /multi-cluster/<runtime_env>/clusters/<cluster-id>/metadata
      */
     public String getClusterRegistryPath(String clusterId) {
-        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, PATH_CLUSTERS, clusterId, PATH_METADATA).toString();
+        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, getRuntimeEnv(), PATH_CLUSTERS, clusterId, PATH_METADATA).toString();
     }
 
     /**
      * Get cluster's assigned controller path (for observability at cluster level)
-     * Pattern: /multi-cluster/clusters/<cluster-id>/assigned-to
+     * Pattern: /multi-cluster/<runtime_env>/clusters/<cluster-id>/assigned-to
      */
     public String getClusterAssignedControllerPath(String clusterId) {
-        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, PATH_CLUSTERS, clusterId, "assigned-to").toString();
+        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, getRuntimeEnv(), PATH_CLUSTERS, clusterId, "assigned-to").toString();
     }
     
     /**
      * Get controllers prefix for listing
-     * Pattern: /multi-cluster/controllers/
+     * Pattern: /multi-cluster/<runtime_env>/controllers/
      */
     public String getControllersPrefix() {
-        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, PATH_CONTROLLERS, "").toString();
+        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, getRuntimeEnv(), PATH_CONTROLLERS, "").toString();
     }
     
     /**
      * Get clusters prefix for listing
-     * Pattern: /multi-cluster/clusters/
+     * Pattern: /multi-cluster/<runtime_env>/clusters/
      */
     public String getClustersPrefix() {
-        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, PATH_CLUSTERS, "").toString();
+        return Paths.get(PATH_DELIMITER, PATH_MULTI_CLUSTER, getRuntimeEnv(), PATH_CLUSTERS, "").toString();
     }
 }

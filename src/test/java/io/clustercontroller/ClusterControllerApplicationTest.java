@@ -1,7 +1,9 @@
 package io.clustercontroller;
 
 import io.clustercontroller.store.EtcdMetadataStore;
+import io.clustercontroller.store.EtcdPathResolver;
 import io.clustercontroller.store.MetadataStore;
+import io.clustercontroller.util.EnvironmentUtils;
 import io.etcd.jetcd.*;
 import io.etcd.jetcd.election.CampaignResponse;
 import io.etcd.jetcd.lease.LeaseGrantResponse;
@@ -47,6 +49,10 @@ class ClusterControllerApplicationTest {
 
     @BeforeEach
     void setUp() {
+        // Initialize EtcdPathResolver for tests
+        EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
+        new EtcdPathResolver();
+        
         // Reset singleton instance before each test
         EtcdMetadataStore.resetInstance();
         

@@ -1,5 +1,6 @@
 package io.clustercontroller.store;
 
+import io.clustercontroller.util.EnvironmentUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -12,7 +13,10 @@ class EtcdPathResolverTest {
 
     @BeforeEach
     void setUp() {
-        pathResolver = EtcdPathResolver.getInstance();
+        // Set up test environment before creating the resolver
+        EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
+        // Create instance manually (in production, Spring does this)
+        pathResolver = new EtcdPathResolver();
     }
 
     @Test
@@ -132,5 +136,145 @@ class EtcdPathResolverTest {
         assertThat(cluster1Path).isEqualTo("/cluster1/indices/index1/conf");
         assertThat(cluster2Path).isEqualTo("/cluster2/indices/index1/conf");
         assertThat(cluster1Path).isNotEqualTo(cluster2Path);
+    }
+
+    // =================================================================
+    // RUNTIME ENVIRONMENT TESTS
+    // =================================================================
+
+    @Test
+    void testDefaultRuntimeEnv() {
+        // Default should be "staging"
+        assertThat(pathResolver.getRuntimeEnv()).isNotNull();
+    }
+
+    @Test
+    void testSetRuntimeEnv() {
+        String originalEnv = pathResolver.getRuntimeEnv();
+        try {
+            EnvironmentUtils.setForTesting("controller.runtime_env", "production");
+            assertThat(pathResolver.getRuntimeEnv()).isEqualTo("production");
+        } finally {
+            // Restore original to not affect other tests
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
+        }
+    }
+
+    // =================================================================
+    // MULTI-CLUSTER PATHS WITH RUNTIME ENVIRONMENT
+    // =================================================================
+
+    @Test
+    void testGetMultiClusterRootIncludesEnv() {
+        String originalEnv = pathResolver.getRuntimeEnv();
+        try {
+            EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
+            String path = pathResolver.getMultiClusterRoot();
+            assertThat(path).isEqualTo("/multi-cluster/staging");
+        } finally {
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
+        }
+    }
+
+    @Test
+    void testGetControllerHeartbeatPathIncludesEnv() {
+        String originalEnv = pathResolver.getRuntimeEnv();
+        try {
+            EnvironmentUtils.setForTesting("controller.runtime_env", "production");
+            String path = pathResolver.getControllerHeartbeatPath("controller-1");
+            assertThat(path).isEqualTo("/multi-cluster/production/controllers/controller-1/heartbeat");
+        } finally {
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
+        }
+    }
+
+    @Test
+    void testGetControllerAssignmentPathIncludesEnv() {
+        String originalEnv = pathResolver.getRuntimeEnv();
+        try {
+            EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
+            String path = pathResolver.getControllerAssignmentPath("controller-1", "cluster-a");
+            assertThat(path).isEqualTo("/multi-cluster/staging/controllers/controller-1/assigned/cluster-a");
+        } finally {
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
+        }
+    }
+
+    @Test
+    void testGetClusterLockPathIncludesEnv() {
+        String originalEnv = pathResolver.getRuntimeEnv();
+        try {
+            EnvironmentUtils.setForTesting("controller.runtime_env", "production");
+            String path = pathResolver.getClusterLockPath("cluster-a");
+            assertThat(path).isEqualTo("/multi-cluster/production/locks/clusters/cluster-a");
+        } finally {
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
+        }
+    }
+
+    @Test
+    void testGetClusterRegistryPathIncludesEnv() {
+        String originalEnv = pathResolver.getRuntimeEnv();
+        try {
+            EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
+            String path = pathResolver.getClusterRegistryPath("cluster-a");
+            assertThat(path).isEqualTo("/multi-cluster/staging/clusters/cluster-a/metadata");
+        } finally {
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
+        }
+    }
+
+    @Test
+    void testGetClusterAssignedControllerPathIncludesEnv() {
+        String originalEnv = pathResolver.getRuntimeEnv();
+        try {
+            EnvironmentUtils.setForTesting("controller.runtime_env", "production");
+            String path = pathResolver.getClusterAssignedControllerPath("cluster-a");
+            assertThat(path).isEqualTo("/multi-cluster/production/clusters/cluster-a/assigned-to");
+        } finally {
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
+        }
+    }
+
+    @Test
+    void testGetControllersPrefixIncludesEnv() {
+        String originalEnv = pathResolver.getRuntimeEnv();
+        try {
+            EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
+            String path = pathResolver.getControllersPrefix();
+            assertThat(path).isEqualTo("/multi-cluster/staging/controllers");
+        } finally {
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
+        }
+    }
+
+    @Test
+    void testGetClustersPrefixIncludesEnv() {
+        String originalEnv = pathResolver.getRuntimeEnv();
+        try {
+            EnvironmentUtils.setForTesting("controller.runtime_env", "production");
+            String path = pathResolver.getClustersPrefix();
+            assertThat(path).isEqualTo("/multi-cluster/production/clusters");
+        } finally {
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
+        }
+    }
+
+    @Test
+    void testDifferentEnvsProduceDifferentPaths() {
+        String originalEnv = pathResolver.getRuntimeEnv();
+        try {
+            EnvironmentUtils.setForTesting("controller.runtime_env", "staging");
+            String stagingPath = pathResolver.getClusterLockPath("cluster-a");
+            
+            EnvironmentUtils.setForTesting("controller.runtime_env", "production");
+            String productionPath = pathResolver.getClusterLockPath("cluster-a");
+            
+            assertThat(stagingPath).isNotEqualTo(productionPath);
+            assertThat(stagingPath).contains("/staging/");
+            assertThat(productionPath).contains("/production/");
+        } finally {
+            EnvironmentUtils.setForTesting("controller.runtime_env", originalEnv);
+        }
     }
 }

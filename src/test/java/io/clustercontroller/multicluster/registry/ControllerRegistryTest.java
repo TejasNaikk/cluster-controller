@@ -69,7 +69,7 @@ class ControllerRegistryTest {
         String controllerId = "controller-1";
         int ttl = 60;
         long leaseId = 12345L;
-        String heartbeatPath = "/multi-cluster/controllers/controller-1/heartbeat";
+        String heartbeatPath = "/multi-cluster/staging/controllers/controller-1/heartbeat";
         
         when(pathResolver.getControllerHeartbeatPath(controllerId)).thenReturn(heartbeatPath);
         
@@ -144,17 +144,17 @@ class ControllerRegistryTest {
     @Test
     void testListActiveControllers_ReturnsControllerIds() throws Exception {
         // Given
-        String prefix = "/multi-cluster/controllers/";
+        String prefix = "/multi-cluster/staging/controllers/";
         when(pathResolver.getControllersPrefix()).thenReturn(prefix);
         
         KeyValue kv1 = mock(KeyValue.class);
-        when(kv1.getKey()).thenReturn(ByteSequence.from("/multi-cluster/controllers/controller-1/heartbeat", UTF_8));
+        when(kv1.getKey()).thenReturn(ByteSequence.from("/multi-cluster/staging/controllers/controller-1/heartbeat", UTF_8));
         
         KeyValue kv2 = mock(KeyValue.class);
-        when(kv2.getKey()).thenReturn(ByteSequence.from("/multi-cluster/controllers/controller-2/heartbeat", UTF_8));
+        when(kv2.getKey()).thenReturn(ByteSequence.from("/multi-cluster/staging/controllers/controller-2/heartbeat", UTF_8));
         
         KeyValue kv3 = mock(KeyValue.class);
-        when(kv3.getKey()).thenReturn(ByteSequence.from("/multi-cluster/controllers/controller-3/assigned/cluster-1", UTF_8));
+        when(kv3.getKey()).thenReturn(ByteSequence.from("/multi-cluster/staging/controllers/controller-3/assigned/cluster-1", UTF_8));
         
         GetResponse getResponse = mock(GetResponse.class);
         when(getResponse.getKvs()).thenReturn(List.of(kv1, kv2, kv3));
@@ -173,7 +173,7 @@ class ControllerRegistryTest {
     @Test
     void testListActiveControllers_ReturnsEmptyOnError() {
         // Given
-        String prefix = "/multi-cluster/controllers/";
+        String prefix = "/multi-cluster/staging/controllers/";
         when(pathResolver.getControllersPrefix()).thenReturn(prefix);
         
         when(kvClient.get(any(ByteSequence.class), any(GetOption.class)))
@@ -189,7 +189,7 @@ class ControllerRegistryTest {
     @Test
     void testWatchControllers_TriggersCallbackOnChange() {
         // Given
-        String prefix = "/multi-cluster/controllers/";
+        String prefix = "/multi-cluster/staging/controllers/";
         when(pathResolver.getControllersPrefix()).thenReturn(prefix);
         
         // Capture the watch callback

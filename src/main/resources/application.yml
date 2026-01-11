@@ -1,4 +1,5 @@
 # Application Configuration
+
 etcd:
   endpoints:
     - http://localhost:2379
@@ -15,6 +16,8 @@ coordinator_goal_state:
 controller:
   # Controller ID - REQUIRED: reads from NODE_NAME environment variable
   id: ${NODE_NAME}
+  # Runtime environment for multi-cluster path isolation (staging, production, etc.)
+  runtime_env: ${RUNTIME_ENV:staging}
   ttl:
     seconds: 60
   keepalive:

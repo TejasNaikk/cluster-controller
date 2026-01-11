@@ -15,9 +15,12 @@ import io.clustercontroller.proxy.HttpForwarder;
 import io.clustercontroller.templates.TemplateManager;
 import io.clustercontroller.store.MetadataStore;
 import io.clustercontroller.store.EtcdMetadataStore;
+import io.clustercontroller.store.EtcdPathResolver;
 import io.etcd.jetcd.Client;
 
+import io.clustercontroller.util.EnvironmentUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
@@ -59,11 +62,16 @@ public class ClusterControllerApplication {
     
     /**
      * MetadataStore bean - cluster-agnostic, uses etcd endpoints only
+     * Depends on EtcdPathResolver to ensure it's initialized first (reads its own config via @Value)
      */
     @Bean
-    public MetadataStore metadataStore(ClusterControllerConfig config) {
+    public MetadataStore metadataStore(
+            ClusterControllerConfig config,
+            EnvironmentUtils envUtils,
+            EtcdPathResolver pathResolver) {
         log.info("Initializing cluster-agnostic MetadataStore connection to etcd");
         try {
+            
             EtcdMetadataStore store = EtcdMetadataStore.getInstance(config.getEtcdEndpoints());
             // Configure coordinator goal state path from YAML config
             store.setCoordinatorGoalStateLocation(

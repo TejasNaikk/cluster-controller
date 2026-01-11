@@ -54,12 +54,12 @@ public class ClusterRegistry {
             Set<String> clusters = new HashSet<>();
             for (KeyValue kv : response.getKvs()) {
                 String path = kv.getKey().toString(UTF_8);
-                // Extract cluster ID from path: /multi-cluster/clusters/{id}/metadata
+                // Extract cluster ID from path: /multi-cluster/<env>/clusters/{id}/metadata
                 // Only include clusters that have metadata key (ignore assignment keys)
                 if (path.endsWith("/metadata")) {
                     String[] parts = path.split("/");
-                    if (parts.length >= 4) {
-                        clusters.add(parts[3]);
+                    if (parts.length >= 5) {
+                        clusters.add(parts[4]);
                     }
                 }
             }

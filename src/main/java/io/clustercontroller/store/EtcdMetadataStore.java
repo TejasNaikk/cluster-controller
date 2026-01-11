@@ -74,7 +74,7 @@ public class EtcdMetadataStore implements MetadataStore {
      */
     private EtcdMetadataStore(String[] etcdEndpoints) throws Exception {
         this.etcdEndpoints = etcdEndpoints;
-        this.nodeId = EnvironmentUtils.getRequiredEnv("NODE_NAME");
+        this.nodeId = EnvironmentUtils.get("controller.id");
         
         // Initialize Jackson ObjectMapper
         this.objectMapper = new ObjectMapper()
