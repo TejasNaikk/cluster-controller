@@ -102,13 +102,6 @@ public class ActualAllocationUpdater {
             String unitName = searchUnit.getName();
             
             try {
-                // First check if the search unit itself is DRAINED or unhealthy in configuration 
-                if (!Constants.ADMIN_STATE_NORMAL.equalsIgnoreCase(String.valueOf(searchUnit.getStateAdmin()))) {
-                    log.debug("ActualAllocationUpdater - Skipping non-normal SU: {} (admin_state: {})", 
-                        unitName, searchUnit.getStateAdmin());
-                    continue;
-                }
-                
                 // Skip coordinator nodes - they belong to a separate cluster
                 if (isCoordinatorNode(searchUnit)) {
                     log.debug("ActualAllocationUpdater - Skipping coordinator node: {}", unitName);
