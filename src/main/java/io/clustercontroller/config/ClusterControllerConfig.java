@@ -1,5 +1,6 @@
 package io.clustercontroller.config;
 
+import io.clustercontroller.util.EnvironmentUtils;
 import lombok.Data;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -105,14 +106,16 @@ public class ClusterControllerConfig {
     
     private String[] parseEndpoints(ConfigModel config) {
         try {
-            if (config.getEtcd() != null && config.getEtcd().getEndpoints() != null) {
-                var endpoints = config.getEtcd().getEndpoints();
-                if (!endpoints.isEmpty()) {
-                    return endpoints.toArray(new String[0]);
-                }
+            // Get from EnvironmentUtils (reads from Spring Environment with env var support)
+            // Supports comma-separated endpoints: "http://etcd1:2379,http://etcd2:2379"
+            String endpointsStr = EnvironmentUtils.get("etcd.endpoints");
+            String[] endpoints = endpointsStr.split(",");
+            for (int i = 0; i < endpoints.length; i++) {
+                endpoints[i] = endpoints[i].trim();
             }
+            return endpoints;
         } catch (Exception e) {
-            log.warn("Failed to parse etcd endpoints from config, using defaults: {}", e.getMessage());
+            log.warn("Failed to get etcd.endpoints from config: {}", e.getMessage());
         }
         
         return new String[]{DEFAULT_ETCD_ENDPOINT};
@@ -169,7 +172,7 @@ public class ClusterControllerConfig {
     
     @Data
     public static class Etcd {
-        private List<String> endpoints;
+        private String endpoints;  // Comma-separated, resolved via Spring: ${ETCD_ENDPOINTS:default}
     }
     
     @Data
@@ -180,6 +183,7 @@ public class ClusterControllerConfig {
     @Data
     public static class Controller {
         private String id;
+        private String runtime_env;  // Resolved via Spring: ${RUNTIME_ENV:staging}
         private Ttl ttl;
         private Keepalive keepalive;
     }

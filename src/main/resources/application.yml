@@ -1,8 +1,8 @@
 # Application Configuration
 
 etcd:
-  endpoints:
-    - http://localhost:2379
+  # Comma-separated list of etcd endpoints, can be overridden by ETCD_ENDPOINTS env var
+  endpoints: ${ETCD_ENDPOINTS:http://localhost:2379}
 
 task:
   intervalSeconds: 30
