@@ -4,8 +4,8 @@ cluster:
   name: default-cluster
 
 etcd:
-  endpoints:
-    - http://host.docker.internal:2379
+  # Comma-separated list of etcd endpoints, can be overridden by ETCD_ENDPOINTS env var
+  endpoints: ${ETCD_ENDPOINTS:http://host.docker.internal:2379}
 
 task:
   intervalSeconds: 30
