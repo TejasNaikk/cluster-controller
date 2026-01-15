@@ -82,7 +82,9 @@ public class SearchUnitActualState {
     @JsonProperty("cluster_name")
     private String clusterName; // "search-cluster", "analytics-cluster", etc.
     
-
+    // Stats reported by the dataplane (doc counts, etc.)
+    @JsonProperty("stats")
+    private IndicesStats stats;
     
     public SearchUnitActualState() {
         this.nodeRouting = new HashMap<>();
@@ -180,5 +182,129 @@ public class SearchUnitActualState {
         public boolean isPrimary() {
             return role != null && Constants.ROLE_PRIMARY.equalsIgnoreCase(role);
         }
+    }
+    
+    /**
+     * Stats reported by the dataplane containing index and shard level metrics
+     */
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class IndicesStats {
+        @JsonProperty("indices")
+        private IndicesContainer indices;
+    }
+    
+    /**
+     * Container for index-level stats
+     */
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class IndicesContainer {
+        @JsonProperty("docs")
+        private DocsStats docs;
+        
+        @JsonProperty("shards")
+        private Map<String, List<Map<String, ShardLevelStats>>> shards; // indexName -> list of shard stats
+    }
+    
+    /**
+     * Document count statistics
+     */
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class DocsStats {
+        @JsonProperty("count")
+        private long count;
+        
+        @JsonProperty("deleted")
+        private long deleted;
+    }
+    
+    /**
+     * Shard-level statistics including docs and sequence numbers
+     */
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class ShardLevelStats {
+        @JsonProperty("docs")
+        private DocsStats docs;
+        
+        @JsonProperty("seq_no")
+        private SeqNoStats seqNo;
+    }
+    
+    /**
+     * Sequence number stats for tracking replication progress
+     */
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SeqNoStats {
+        @JsonProperty("max_seq_no")
+        private long maxSeqNo;
+        
+        @JsonProperty("local_checkpoint")
+        private long localCheckpoint;
+        
+        @JsonProperty("global_checkpoint")
+        private long globalCheckpoint;
+    }
+    
+    // ========== UTILITY METHODS FOR STATS ==========
+    
+    /**
+     * Get the document count for a specific index and shard from the stats.
+     * 
+     * @param indexName the name of the index
+     * @param shardId the shard ID
+     * @return the document count, or -1 if not found
+     */
+    public long getShardDocCount(String indexName, int shardId) {
+        if (stats == null || stats.getIndices() == null || stats.getIndices().getShards() == null) {
+            return -1;
+        }
+        
+        List<Map<String, ShardLevelStats>> indexShards = stats.getIndices().getShards().get(indexName);
+        if (indexShards == null) {
+            return -1;
+        }
+        
+        String shardIdStr = String.valueOf(shardId);
+        for (Map<String, ShardLevelStats> shardMap : indexShards) {
+            ShardLevelStats shardStats = shardMap.get(shardIdStr);
+            if (shardStats != null && shardStats.getDocs() != null) {
+                return shardStats.getDocs().getCount();
+            }
+        }
+        
+        return -1;
+    }
+    
+    /**
+     * Check if a shard's data is fully replicated (global checkpoint equals local checkpoint).
+     * 
+     * @param indexName the name of the index
+     * @param shardId the shard ID
+     * @return true if replicated, false if not or if data not available
+     */
+    public boolean isShardReplicated(String indexName, int shardId) {
+        if (stats == null || stats.getIndices() == null || stats.getIndices().getShards() == null) {
+            return false;
+        }
+        
+        List<Map<String, ShardLevelStats>> indexShards = stats.getIndices().getShards().get(indexName);
+        if (indexShards == null) {
+            return false;
+        }
+        
+        String shardIdStr = String.valueOf(shardId);
+        for (Map<String, ShardLevelStats> shardMap : indexShards) {
+            ShardLevelStats shardStats = shardMap.get(shardIdStr);
+            if (shardStats != null && shardStats.getSeqNo() != null) {
+                SeqNoStats seqNo = shardStats.getSeqNo();
+                return seqNo.getGlobalCheckpoint() == seqNo.getLocalCheckpoint();
+            }
+        }
+        
+        return false;
     }
 } 
