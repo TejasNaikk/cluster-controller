@@ -54,7 +54,9 @@ public class ClusterControllerApplication {
     
     @Bean
     @Primary
-    public ClusterControllerConfig config() {
+    public ClusterControllerConfig config(EnvironmentUtils envUtils) {
+        // envUtils parameter ensures EnvironmentUtils bean is initialized first
+        // so that ClusterControllerConfig can use EnvironmentUtils.get() for env var resolution
         ClusterControllerConfig config = new ClusterControllerConfig();
         log.info("Loaded configuration");
         return config;
