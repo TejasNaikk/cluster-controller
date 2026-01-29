@@ -25,6 +25,9 @@ public class MetricsConstants {
     // Replication lag metrics
     public final static String SHARD_REPLICA_LAG_DOCS_METRIC_NAME = "shard_replica_lag_docs";
     
+    // Allocation convergence metrics
+    public final static String SHARD_PENDING_ALLOCATION_COUNT_METRIC_NAME = "shard_pending_allocation_count";
+    
     // Index level metrics
     public final static String INDEX_TOTAL_DOC_COUNT_METRIC_NAME = "index_total_doc_count";
     

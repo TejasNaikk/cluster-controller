@@ -730,7 +730,7 @@ public class ActualAllocationUpdater {
                     buildMetricsTags(clusterId, indexName, shardId)
                 );
                 
-                // 3. Emit shard_total_allocation_count - get from planned allocation
+                // 3. Emit shard_total_allocation_count and shard_pending_allocation_count
                 try {
                     ShardAllocation plannedAllocation = metadataStore.getPlannedAllocation(clusterId, indexName, shardId);
                     if (plannedAllocation != null) {
@@ -738,6 +738,14 @@ public class ActualAllocationUpdater {
                         metricsProvider.gauge(
                             SHARD_TOTAL_ALLOCATION_COUNT_METRIC_NAME,
                             totalPlanned,
+                            buildMetricsTags(clusterId, indexName, shardId)
+                        );
+                        
+                        // Emit pending allocation count (planned - started)
+                        int pendingCount = Math.max(0, totalPlanned - replicaCount);
+                        metricsProvider.gauge(
+                            SHARD_PENDING_ALLOCATION_COUNT_METRIC_NAME,
+                            pendingCount,
                             buildMetricsTags(clusterId, indexName, shardId)
                         );
                     }
