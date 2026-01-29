@@ -90,6 +90,9 @@ public class ActualAllocationUpdater {
         // Emit shard distribution and doc count metrics
         emitShardDistributionMetrics(clusterId, searchUnits, actualAllocations);
         
+        // Cleanup stale gauges for deleted indices/shards/nodes
+        metricsProvider.cleanupStaleGauges();
+        
         log.info("ActualAllocationUpdater - Completed actual allocation update with {} updates and {} coordinator goal state updates", 
                     totalUpdates, coordinatorUpdates);
     }

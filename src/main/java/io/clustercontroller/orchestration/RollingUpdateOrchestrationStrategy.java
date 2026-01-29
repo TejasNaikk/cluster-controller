@@ -80,6 +80,9 @@ public class RollingUpdateOrchestrationStrategy implements GoalStateOrchestratio
                 }
             }
             
+            // Cleanup stale gauges for deleted indices/shards
+            metricsProvider.cleanupStaleGauges();
+            
             log.info("Completed rolling update orchestration for cluster: {}", clusterId);
         } catch (Exception e) {
             log.error("Failed to orchestrate goal states for cluster {}: {}", clusterId, e.getMessage(), e);
