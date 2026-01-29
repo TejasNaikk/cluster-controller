@@ -21,8 +21,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static io.clustercontroller.metrics.MetricsConstants.UPDATE_ACTUAL_ALLOCATION_FAILURES_METRIC_NAME;
-import static io.clustercontroller.metrics.MetricsUtils.buildMetricsTags;
+import static io.clustercontroller.metrics.MetricsConstants.*;
+import static io.clustercontroller.metrics.MetricsUtils.*;
 
 /**
  * ActualAllocationUpdater - Responsible for aggregating search unit actual states into index shard actual allocations
@@ -86,6 +86,9 @@ public class ActualAllocationUpdater {
         
         // NEW: Update coordinator goal states based on planned allocations
         int coordinatorUpdates = updateCoordinatorGoalStates(clusterId, searchUnits);
+        
+        // Emit shard distribution and doc count metrics
+        emitShardDistributionMetrics(clusterId, searchUnits, actualAllocations);
         
         log.info("ActualAllocationUpdater - Completed actual allocation update with {} updates and {} coordinator goal state updates", 
                     totalUpdates, coordinatorUpdates);
@@ -660,6 +663,251 @@ public class ActualAllocationUpdater {
         }
         
         return true;
+    }
+    
+    /**
+     * Emit shard distribution and doc count metrics for monitoring and visualization.
+     * 
+     * Metrics emitted:
+     * 1. shard_replica_count - Per shard: number of nodes hosting this shard in STARTED state
+     * 2. node_shard_count - Per node: number of shards this node hosts
+     * 3. shard_total_allocation_count - Total nodes allocated for this shard (planned)
+     * 4. shard_primary_doc_count - Doc count from primary for each shard
+     * 5. shard_replica_doc_count - Doc count from each replica (tagged with nodeName)
+     * 6. shard_primary_deleted_doc_count - Deleted doc count from primary
+     * 7. shard_replica_lag_docs - (Primary doc count - Replica doc count) per replica
+     * 8. index_total_doc_count - Sum of all primary doc counts for an index
+     */
+    private void emitShardDistributionMetrics(String clusterId, List<SearchUnit> searchUnits, 
+            Map<String, Map<String, Set<String>>> actualAllocations) {
+        log.debug("ActualAllocationUpdater - Emitting shard distribution metrics for cluster {}", clusterId);
+        
+        // Map to track shard count per node: nodeName -> count
+        Map<String, Integer> nodeShardCounts = new HashMap<>();
+        // Map to track node roles: nodeName -> role
+        Map<String, String> nodeRoles = new HashMap<>();
+        // Map to track primary doc counts per shard: indexName -> shardId -> docCount
+        Map<String, Map<String, Long>> primaryDocCounts = new HashMap<>();
+        // Map to track index total doc counts: indexName -> totalDocCount
+        Map<String, Long> indexTotalDocCounts = new HashMap<>();
+        
+        // First pass: collect all actual states and build data structures
+        Map<String, SearchUnitActualState> actualStates = new HashMap<>();
+        for (SearchUnit searchUnit : searchUnits) {
+            if (isCoordinatorNode(searchUnit)) {
+                continue;
+            }
+            String unitName = searchUnit.getName();
+            try {
+                SearchUnitActualState actualState = metadataStore.getSearchUnitActualState(clusterId, unitName);
+                if (actualState != null && isNodeTimestampRecent(actualState, unitName)) {
+                    actualStates.put(unitName, actualState);
+                    
+                    // Track node role
+                    String role = searchUnit.getRole() != null ? searchUnit.getRole().toUpperCase() : "UNKNOWN";
+                    nodeRoles.put(unitName, role);
+                }
+            } catch (Exception e) {
+                log.warn("ActualAllocationUpdater - Error getting actual state for metrics, unit {}: {}", 
+                    unitName, e.getMessage());
+            }
+        }
+        
+        // Process each index and shard
+        for (Map.Entry<String, Map<String, Set<String>>> indexEntry : actualAllocations.entrySet()) {
+            String indexName = indexEntry.getKey();
+            long indexTotalDocs = 0;
+            
+            for (Map.Entry<String, Set<String>> shardEntry : indexEntry.getValue().entrySet()) {
+                String shardId = shardEntry.getKey();
+                Set<String> allocatedUnits = shardEntry.getValue();
+                
+                // 1. Emit shard_replica_count - number of nodes hosting this shard in STARTED state
+                int replicaCount = allocatedUnits.size();
+                metricsProvider.gauge(
+                    SHARD_REPLICA_COUNT_METRIC_NAME,
+                    replicaCount,
+                    buildMetricsTags(clusterId, indexName, shardId)
+                );
+                
+                // 3. Emit shard_total_allocation_count - get from planned allocation
+                try {
+                    ShardAllocation plannedAllocation = metadataStore.getPlannedAllocation(clusterId, indexName, shardId);
+                    if (plannedAllocation != null) {
+                        int totalPlanned = plannedAllocation.getIngestSUs().size() + plannedAllocation.getSearchSUs().size();
+                        metricsProvider.gauge(
+                            SHARD_TOTAL_ALLOCATION_COUNT_METRIC_NAME,
+                            totalPlanned,
+                            buildMetricsTags(clusterId, indexName, shardId)
+                        );
+                    }
+                } catch (Exception e) {
+                    log.debug("ActualAllocationUpdater - Error getting planned allocation for metrics: {}", e.getMessage());
+                }
+                
+                // Find primary and collect doc counts
+                long primaryDocCount = -1;
+                long primaryDeletedDocCount = -1;
+                int shardIdInt = Integer.parseInt(shardId);
+                
+                for (String unitName : allocatedUnits) {
+                    // Track shard count per node
+                    nodeShardCounts.merge(unitName, 1, Integer::sum);
+                    
+                    SearchUnitActualState actualState = actualStates.get(unitName);
+                    if (actualState == null) {
+                        continue;
+                    }
+                    
+                    // Get doc count for this shard
+                    long docCount = actualState.getShardDocCount(indexName, shardIdInt);
+                    
+                    // Check if this is a primary node
+                    Map<String, List<SearchUnitActualState.ShardRoutingInfo>> nodeRouting = actualState.getNodeRouting();
+                    if (nodeRouting != null && nodeRouting.containsKey(indexName)) {
+                        List<SearchUnitActualState.ShardRoutingInfo> shards = nodeRouting.get(indexName);
+                        if (shards != null) {
+                            for (SearchUnitActualState.ShardRoutingInfo shard : shards) {
+                                if (shard.getShardId() == shardIdInt) {
+                                    if (shard.isPrimary()) {
+                                        // This is the primary - emit primary doc count
+                                        primaryDocCount = docCount;
+                                        
+                                        // Get deleted doc count if available
+                                        if (actualState.getStats() != null 
+                                            && actualState.getStats().getIndices() != null
+                                            && actualState.getStats().getIndices().getShards() != null) {
+                                            List<Map<String, SearchUnitActualState.ShardLevelStats>> indexShards = 
+                                                actualState.getStats().getIndices().getShards().get(indexName);
+                                            if (indexShards != null) {
+                                                for (Map<String, SearchUnitActualState.ShardLevelStats> shardMap : indexShards) {
+                                                    SearchUnitActualState.ShardLevelStats stats = shardMap.get(shardId);
+                                                    if (stats != null && stats.getDocs() != null) {
+                                                        primaryDeletedDocCount = stats.getDocs().getDeleted();
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        
+                                        // 4. Emit shard_primary_doc_count
+                                        if (primaryDocCount >= 0) {
+                                            metricsProvider.gauge(
+                                                SHARD_PRIMARY_DOC_COUNT_METRIC_NAME,
+                                                primaryDocCount,
+                                                buildMetricsTags(clusterId, indexName, shardId)
+                                            );
+                                            
+                                            // Store for lag calculation
+                                            primaryDocCounts
+                                                .computeIfAbsent(indexName, k -> new HashMap<>())
+                                                .put(shardId, primaryDocCount);
+                                            
+                                            // Add to index total
+                                            indexTotalDocs += primaryDocCount;
+                                        }
+                                        
+                                        // 6. Emit shard_primary_deleted_doc_count
+                                        if (primaryDeletedDocCount >= 0) {
+                                            metricsProvider.gauge(
+                                                SHARD_PRIMARY_DELETED_DOC_COUNT_METRIC_NAME,
+                                                primaryDeletedDocCount,
+                                                buildMetricsTags(clusterId, indexName, shardId)
+                                            );
+                                        }
+                                    } else {
+                                        // This is a replica - emit replica doc count
+                                        if (docCount >= 0) {
+                                            // 5. Emit shard_replica_doc_count (tagged with node name)
+                                            metricsProvider.gauge(
+                                                SHARD_REPLICA_DOC_COUNT_METRIC_NAME,
+                                                docCount,
+                                                buildMetricsTagsWithNode(clusterId, indexName, shardId, unitName)
+                                            );
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 8. Emit index_total_doc_count
+            if (indexTotalDocs > 0) {
+                metricsProvider.gauge(
+                    INDEX_TOTAL_DOC_COUNT_METRIC_NAME,
+                    indexTotalDocs,
+                    buildIndexMetricsTags(clusterId, indexName)
+                );
+            }
+            indexTotalDocCounts.put(indexName, indexTotalDocs);
+        }
+        
+        // Second pass: emit replica lag metrics (now that we have primary doc counts)
+        for (Map.Entry<String, Map<String, Set<String>>> indexEntry : actualAllocations.entrySet()) {
+            String indexName = indexEntry.getKey();
+            Map<String, Long> shardPrimaryDocs = primaryDocCounts.get(indexName);
+            if (shardPrimaryDocs == null) {
+                continue;
+            }
+            
+            for (Map.Entry<String, Set<String>> shardEntry : indexEntry.getValue().entrySet()) {
+                String shardId = shardEntry.getKey();
+                Long primaryDocCount = shardPrimaryDocs.get(shardId);
+                if (primaryDocCount == null || primaryDocCount < 0) {
+                    continue;
+                }
+                
+                int shardIdInt = Integer.parseInt(shardId);
+                
+                for (String unitName : shardEntry.getValue()) {
+                    SearchUnitActualState actualState = actualStates.get(unitName);
+                    if (actualState == null) {
+                        continue;
+                    }
+                    
+                    // Check if this is a replica
+                    Map<String, List<SearchUnitActualState.ShardRoutingInfo>> nodeRouting = actualState.getNodeRouting();
+                    if (nodeRouting != null && nodeRouting.containsKey(indexName)) {
+                        List<SearchUnitActualState.ShardRoutingInfo> shards = nodeRouting.get(indexName);
+                        if (shards != null) {
+                            for (SearchUnitActualState.ShardRoutingInfo shard : shards) {
+                                if (shard.getShardId() == shardIdInt && !shard.isPrimary()) {
+                                    long replicaDocCount = actualState.getShardDocCount(indexName, shardIdInt);
+                                    if (replicaDocCount >= 0) {
+                                        // 7. Emit shard_replica_lag_docs
+                                        long lag = primaryDocCount - replicaDocCount;
+                                        metricsProvider.gauge(
+                                            SHARD_REPLICA_LAG_DOCS_METRIC_NAME,
+                                            lag,
+                                            buildMetricsTagsWithNode(clusterId, indexName, shardId, unitName)
+                                        );
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 2. Emit node_shard_count for each node
+        for (Map.Entry<String, Integer> nodeEntry : nodeShardCounts.entrySet()) {
+            String nodeName = nodeEntry.getKey();
+            int shardCount = nodeEntry.getValue();
+            String role = nodeRoles.getOrDefault(nodeName, "UNKNOWN");
+            
+            metricsProvider.gauge(
+                NODE_SHARD_COUNT_METRIC_NAME,
+                shardCount,
+                buildNodeMetricsTags(clusterId, nodeName, role)
+            );
+        }
+        
+        log.info("ActualAllocationUpdater - Emitted metrics for {} indices, {} nodes", 
+            actualAllocations.size(), nodeShardCounts.size());
     }
     
 }
