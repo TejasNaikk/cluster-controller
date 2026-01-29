@@ -79,6 +79,25 @@ public class MetricsUtils {
     }
     
     /**
+     * Builds a map of metrics tags for node-level metrics with index context.
+     * Used for tracking per-node per-index shard distribution.
+     *
+     * @param clusterId the cluster ID
+     * @param indexName the index name
+     * @param nodeName the node name
+     * @param role the node role
+     * @return a map of metrics tags
+     */
+    public static Map<String, String> buildNodeMetricsTagsWithIndex(String clusterId, String indexName, String nodeName, String role) {
+        Map<String, String> tags = new HashMap<>();
+        tags.put(CLUSTER_ID_TAG, clusterId);
+        tags.put(INDEX_NAME_TAG, indexName);
+        tags.put(NODE_NAME_TAG, nodeName);
+        tags.put(ROLE_TAG, role);
+        return tags;
+    }
+    
+    /**
      * Builds a map of metrics tags for index-level metrics.
      *
      * @param clusterId the cluster ID

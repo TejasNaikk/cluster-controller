@@ -685,8 +685,8 @@ public class ActualAllocationUpdater {
             Map<String, Map<String, Set<String>>> actualAllocations) {
         log.debug("ActualAllocationUpdater - Emitting shard distribution metrics for cluster {}", clusterId);
         
-        // Map to track shard count per node: nodeName -> count
-        Map<String, Integer> nodeShardCounts = new HashMap<>();
+        // Map to track shard count per node per index: indexName -> (nodeName -> count)
+        Map<String, Map<String, Integer>> nodeShardCountsByIndex = new HashMap<>();
         // Map to track node roles: nodeName -> role
         Map<String, String> nodeRoles = new HashMap<>();
         // Map to track primary doc counts per shard: indexName -> shardId -> docCount
@@ -762,8 +762,10 @@ public class ActualAllocationUpdater {
                 int shardIdInt = Integer.parseInt(shardId);
                 
                 for (String unitName : allocatedUnits) {
-                    // Track shard count per node
-                    nodeShardCounts.merge(unitName, 1, Integer::sum);
+                    // Track shard count per node per index
+                    nodeShardCountsByIndex
+                        .computeIfAbsent(indexName, k -> new HashMap<>())
+                        .merge(unitName, 1, Integer::sum);
                     
                     SearchUnitActualState actualState = actualStates.get(unitName);
                     if (actualState == null) {
@@ -904,21 +906,47 @@ public class ActualAllocationUpdater {
             }
         }
         
-        // 2. Emit node_shard_count for each node
-        for (Map.Entry<String, Integer> nodeEntry : nodeShardCounts.entrySet()) {
+        // 2. Emit node_shard_count for each node per index
+        int totalNodeMetrics = 0;
+        Map<String, Integer> nodeTotalShardCounts = new HashMap<>();
+        
+        for (Map.Entry<String, Map<String, Integer>> indexEntry : nodeShardCountsByIndex.entrySet()) {
+            String indexName = indexEntry.getKey();
+            Map<String, Integer> nodeCounts = indexEntry.getValue();
+            
+            for (Map.Entry<String, Integer> nodeEntry : nodeCounts.entrySet()) {
+                String nodeName = nodeEntry.getKey();
+                int shardCount = nodeEntry.getValue();
+                String role = nodeRoles.getOrDefault(nodeName, "UNKNOWN");
+                
+                // Emit per-index node shard count
+                metricsProvider.gauge(
+                    NODE_SHARD_COUNT_METRIC_NAME,
+                    shardCount,
+                    buildNodeMetricsTagsWithIndex(clusterId, indexName, nodeName, role)
+                );
+                totalNodeMetrics++;
+                
+                // Accumulate total shards per node across all indices
+                nodeTotalShardCounts.merge(nodeName, shardCount, Integer::sum);
+            }
+        }
+        
+        // 3. Emit node_total_shard_count for aggregate node load
+        for (Map.Entry<String, Integer> nodeEntry : nodeTotalShardCounts.entrySet()) {
             String nodeName = nodeEntry.getKey();
-            int shardCount = nodeEntry.getValue();
+            int totalShards = nodeEntry.getValue();
             String role = nodeRoles.getOrDefault(nodeName, "UNKNOWN");
             
             metricsProvider.gauge(
-                NODE_SHARD_COUNT_METRIC_NAME,
-                shardCount,
+                NODE_TOTAL_SHARD_COUNT_METRIC_NAME,
+                totalShards,
                 buildNodeMetricsTags(clusterId, nodeName, role)
             );
         }
         
-        log.info("ActualAllocationUpdater - Emitted metrics for {} indices, {} nodes", 
-            actualAllocations.size(), nodeShardCounts.size());
+        log.info("ActualAllocationUpdater - Emitted metrics for {} indices, {} node-index combinations, {} total nodes", 
+            actualAllocations.size(), totalNodeMetrics, nodeTotalShardCounts.size());
     }
     
 }
