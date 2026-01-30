@@ -21,10 +21,12 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MetricsProvider {
     private static final double[] TIMER_PERCENTILES = {0.5, 0.9, 0.99};
     private static final String HOST_NAME_TAG = "hostname";
+    private static final long GAUGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
     private final MeterRegistry registry;
     private final String hostname;
     private final Map<String, AtomicDouble> gaugeCache = new ConcurrentHashMap<>();
+    private final Map<String, Long> gaugeLastUpdated = new ConcurrentHashMap<>();
 
     @Autowired
     public MetricsProvider(
@@ -60,6 +62,10 @@ public class MetricsProvider {
     public AtomicDouble gauge(String name, double value, Map<String, String> tags) {
         tags.put(HOST_NAME_TAG, hostname);
         String cacheKey = buildCacheKey(name, tags);
+        
+        // Track last update time for TTL-based cleanup
+        gaugeLastUpdated.put(cacheKey, System.currentTimeMillis());
+        
         AtomicDouble gauge = gaugeCache.computeIfAbsent(cacheKey, k -> {
             AtomicDouble gaugeValue = new AtomicDouble(value);
             Gauge.builder(name, gaugeValue::get)
@@ -116,6 +122,34 @@ public class MetricsProvider {
             tagArray[index++] = entry.getValue();
         }
         return tagArray;
+    }
+
+    /**
+     * Cleans up stale gauges that haven't been updated within the TTL period.
+     * Sets stale gauge values to 0 to indicate the metric is no longer active.
+     * This handles cleanup for deleted indices, shards, and nodes automatically.
+     */
+    public void cleanupStaleGauges() {
+        long now = System.currentTimeMillis();
+        int cleanedCount = 0;
+        
+        for (Map.Entry<String, Long> entry : gaugeLastUpdated.entrySet()) {
+            String cacheKey = entry.getKey();
+            long lastUpdated = entry.getValue();
+            
+            if (now - lastUpdated > GAUGE_TTL_MS) {
+                AtomicDouble gauge = gaugeCache.get(cacheKey);
+                if (gauge != null) {
+                    gauge.set(0);
+                    cleanedCount++;
+                }
+                gaugeLastUpdated.remove(cacheKey);
+            }
+        }
+        
+        if (cleanedCount > 0) {
+            log.info("Cleaned up {} stale gauges (TTL: {}ms)", cleanedCount, GAUGE_TTL_MS);
+        }
     }
 }
 
