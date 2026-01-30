@@ -802,12 +802,12 @@ public class ActualAllocationUpdater {
                                             }
                                         }
                                         
-                                        // 4. Emit shard_primary_doc_count
+                                        // 4. Emit shard_primary_doc_count (tagged with node name for consistency)
                                         if (primaryDocCount >= 0) {
                                             metricsProvider.gauge(
                                                 SHARD_PRIMARY_DOC_COUNT_METRIC_NAME,
                                                 primaryDocCount,
-                                                buildMetricsTags(clusterId, indexName, shardId)
+                                                buildMetricsTagsWithNode(clusterId, indexName, shardId, unitName)
                                             );
                                             
                                             // Store for lag calculation
@@ -819,12 +819,12 @@ public class ActualAllocationUpdater {
                                             indexTotalDocs += primaryDocCount;
                                         }
                                         
-                                        // 6. Emit shard_primary_deleted_doc_count
+                                        // 6. Emit shard_primary_deleted_doc_count (tagged with node name for consistency)
                                         if (primaryDeletedDocCount >= 0) {
                                             metricsProvider.gauge(
                                                 SHARD_PRIMARY_DELETED_DOC_COUNT_METRIC_NAME,
                                                 primaryDeletedDocCount,
-                                                buildMetricsTags(clusterId, indexName, shardId)
+                                                buildMetricsTagsWithNode(clusterId, indexName, shardId, unitName)
                                             );
                                         }
                                     } else {
