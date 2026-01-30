@@ -1,5 +1,6 @@
 package io.clustercontroller.allocation;
 
+import io.clustercontroller.enums.NodeRole;
 import io.clustercontroller.enums.ShardState;
 import io.clustercontroller.metrics.MetricsProvider;
 import io.clustercontroller.models.Alias;
@@ -725,14 +726,15 @@ public class ActualAllocationUpdater {
                 String shardId = shardEntry.getKey();
                 Set<String> allocatedUnits = shardEntry.getValue();
                 
-                // 1. Count primary and search nodes separately
+                // 1. Count primary and search nodes separately using NodeRole enum
                 int primaryCount = 0;
                 int searchCount = 0;
                 for (String unitName : allocatedUnits) {
-                    String role = nodeRoles.get(unitName);
-                    if ("PRIMARY".equals(role) || "INGEST".equals(role)) {
+                    String roleStr = nodeRoles.get(unitName);
+                    NodeRole role = NodeRole.fromString(roleStr);
+                    if (role == NodeRole.PRIMARY) {
                         primaryCount++;
-                    } else if ("SEARCH".equals(role)) {
+                    } else if (role == NodeRole.REPLICA) {
                         searchCount++;
                     }
                 }
