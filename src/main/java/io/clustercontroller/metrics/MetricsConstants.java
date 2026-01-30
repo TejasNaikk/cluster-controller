@@ -13,7 +13,8 @@ public class MetricsConstants {
     public final static String DISCOVERY_CLEANED_STALE_SEARCH_UNITS_COUNT_METRIC_NAME = "discovery_cleaned_stale_search_units_count";
     
     // Shard distribution metrics (bin-packing visualization)
-    public final static String SHARD_REPLICA_COUNT_METRIC_NAME = "shard_replica_count";
+    public final static String SHARD_PRIMARY_STARTED_COUNT_METRIC_NAME = "shard_primary_started_count";
+    public final static String SHARD_REPLICA_STARTED_COUNT_METRIC_NAME = "shard_replica_started_count";
     public final static String NODE_SHARD_COUNT_METRIC_NAME = "node_shard_count";
     public final static String NODE_TOTAL_SHARD_COUNT_METRIC_NAME = "node_total_shard_count";
     public final static String SHARD_TOTAL_ALLOCATION_COUNT_METRIC_NAME = "shard_total_allocation_count";

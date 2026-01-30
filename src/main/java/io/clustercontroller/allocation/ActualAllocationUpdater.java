@@ -725,10 +725,29 @@ public class ActualAllocationUpdater {
                 String shardId = shardEntry.getKey();
                 Set<String> allocatedUnits = shardEntry.getValue();
                 
-                // 1. Emit shard_replica_count - number of nodes hosting this shard in STARTED state
-                int replicaCount = allocatedUnits.size();
+                // 1. Count primary and search nodes separately
+                int primaryCount = 0;
+                int searchCount = 0;
+                for (String unitName : allocatedUnits) {
+                    String role = nodeRoles.get(unitName);
+                    if ("PRIMARY".equals(role) || "INGEST".equals(role)) {
+                        primaryCount++;
+                    } else if ("SEARCH".equals(role)) {
+                        searchCount++;
+                    }
+                }
+                
+                // Emit shard_primary_started_count - number of primary nodes in STARTED state
                 metricsProvider.gauge(
-                    SHARD_REPLICA_COUNT_METRIC_NAME,
+                    SHARD_PRIMARY_STARTED_COUNT_METRIC_NAME,
+                    primaryCount,
+                    buildMetricsTags(clusterId, indexName, shardId)
+                );
+                
+                // Emit shard_replica_started_count - number of search/replica nodes in STARTED state
+                int replicaCount = searchCount;
+                metricsProvider.gauge(
+                    SHARD_REPLICA_STARTED_COUNT_METRIC_NAME,
                     replicaCount,
                     buildMetricsTags(clusterId, indexName, shardId)
                 );
@@ -745,7 +764,8 @@ public class ActualAllocationUpdater {
                         );
                         
                         // Emit pending allocation count (planned - started)
-                        int pendingCount = Math.max(0, totalPlanned - replicaCount);
+                        int totalStarted = primaryCount + replicaCount;
+                        int pendingCount = Math.max(0, totalPlanned - totalStarted);
                         metricsProvider.gauge(
                             SHARD_PENDING_ALLOCATION_COUNT_METRIC_NAME,
                             pendingCount,
