@@ -241,19 +241,28 @@ public class RollingUpdateOrchestrationStrategy implements GoalStateOrchestratio
             // Get current goal state for the node
             SearchUnitGoalState currentGoalState = metadataStore.getSearchUnitGoalState(clusterId, nodeId);
             
+            // Determine role based on whether this node is in IngestSUs or SearchSUs
+            String role = planned.getIngestSUs().contains(nodeId) ? NodeRole.PRIMARY.getValue() : NodeRole.REPLICA.getValue();
+            
+            // Check if the shard with this role already exists in the goal state
+            // If so, skip the update to avoid unnecessary etcd writes that trigger data node watchers
+            if (currentGoalState != null && currentGoalState.hasShardWithRole(indexName, shardId, role)) {
+                log.debug("Goal state for node {} already has shard {}/{} with role {}, skipping update", 
+                    nodeId, indexName, shardId, role);
+                return;
+            }
+            
             // If null, create new one
             if (currentGoalState == null) {
                 currentGoalState = new SearchUnitGoalState();
             }
-            
-            // Determine role based on whether this node is in IngestSUs or SearchSUs
-            String role = planned.getIngestSUs().contains(nodeId) ? NodeRole.PRIMARY.getValue() : NodeRole.REPLICA.getValue();
             
             // Update goal state with new shard allocation
             SearchUnitGoalState newGoalState = updateGoalStateForIndexShard(currentGoalState, indexName, shardId, role);
             
             // Set new goal state in etcd
             metadataStore.setSearchUnitGoalState(clusterId, nodeId, newGoalState);
+            log.info("Updated goal state for node {} with shard {}/{} role {}", nodeId, indexName, shardId, role);
             
         } catch (Exception e) {
             log.error("Failed to update goal state for node {}: {}", nodeId, e.getMessage(), e);

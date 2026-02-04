@@ -98,4 +98,39 @@ public class SearchUnitGoalState {
                 ", version=" + version +
                 '}';
     }
+    
+    /**
+     * Compares goal states based on localShards content only.
+     * lastUpdated and version are metadata fields that don't affect the actual goal state.
+     * This is used to avoid unnecessary writes to etcd when the goal state hasn't actually changed.
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        SearchUnitGoalState that = (SearchUnitGoalState) o;
+        
+        // Compare localShards content - this is the actual goal state
+        if (localShards == null && that.localShards == null) return true;
+        if (localShards == null || that.localShards == null) return false;
+        
+        return localShards.equals(that.localShards);
+    }
+    
+    @Override
+    public int hashCode() {
+        return localShards != null ? localShards.hashCode() : 0;
+    }
+    
+    /**
+     * Check if a specific index/shard with role already exists in the goal state.
+     * This is used to determine if an update is actually needed.
+     */
+    public boolean hasShardWithRole(String indexName, String shardId, String role) {
+        if (localShards == null) return false;
+        Map<String, String> shards = localShards.get(indexName);
+        if (shards == null) return false;
+        String existingRole = shards.get(shardId);
+        return role.equals(existingRole);
+    }
 }
