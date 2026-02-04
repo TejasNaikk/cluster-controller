@@ -395,6 +395,73 @@ class ImmediateOrchestrationStrategyTest {
     }
 
     @Test
+    void testOrchestrateUpdatesWhenRoleChanges() throws Exception {
+        // Given: A node has shard 0 as REPLICA, but planned allocation says it should be PRIMARY
+        String clusterId = "test-cluster";
+        String indexName = "test-index";
+        
+        Index indexConfig = createIndex(indexName, 1);
+        
+        ShardAllocation planned = new ShardAllocation();
+        planned.setIngestSUs(Arrays.asList("node1")); // node1 should be PRIMARY
+        planned.setSearchSUs(Arrays.asList());
+        
+        // Existing goal state has node1 as REPLICA for this shard
+        SearchUnitGoalState existingGoalState = new SearchUnitGoalState();
+        Map<String, Map<String, String>> localShards = new HashMap<>();
+        localShards.put(indexName, new HashMap<>());
+        localShards.get(indexName).put("0", "SEARCH_REPLICA"); // Wrong role!
+        existingGoalState.setLocalShards(localShards);
+        
+        when(metadataStore.getAllIndexConfigs(clusterId)).thenReturn(Arrays.asList(indexConfig));
+        when(metadataStore.getPlannedAllocation(clusterId, indexName, "0")).thenReturn(planned);
+        when(metadataStore.getSearchUnitGoalState(clusterId, "node1")).thenReturn(existingGoalState);
+
+        // When
+        strategy.orchestrate(clusterId);
+
+        // Then - Should update because the role changed from SEARCH_REPLICA to PRIMARY
+        verify(metadataStore).setSearchUnitGoalState(eq(clusterId), eq("node1"), any(SearchUnitGoalState.class));
+    }
+
+    @Test
+    void testOrchestrateUpdatesWhenNewShardAdded() throws Exception {
+        // Given: A node has shard 0 but now needs shard 1 as well
+        String clusterId = "test-cluster";
+        String indexName = "test-index";
+        
+        Index indexConfig = createIndex(indexName, 2);
+        
+        ShardAllocation planned0 = new ShardAllocation();
+        planned0.setIngestSUs(Arrays.asList("node1"));
+        planned0.setSearchSUs(Arrays.asList());
+        
+        ShardAllocation planned1 = new ShardAllocation();
+        planned1.setIngestSUs(Arrays.asList("node1")); // Same node needs shard 1 now
+        planned1.setSearchSUs(Arrays.asList());
+        
+        // Track goal state - starts with only shard 0
+        SearchUnitGoalState existingGoalState = new SearchUnitGoalState();
+        Map<String, Map<String, String>> localShards = new HashMap<>();
+        localShards.put(indexName, new HashMap<>());
+        localShards.get(indexName).put("0", "PRIMARY");
+        existingGoalState.setLocalShards(localShards);
+        
+        when(metadataStore.getAllIndexConfigs(clusterId)).thenReturn(Arrays.asList(indexConfig));
+        when(metadataStore.getPlannedAllocation(clusterId, indexName, "0")).thenReturn(planned0);
+        when(metadataStore.getPlannedAllocation(clusterId, indexName, "1")).thenReturn(planned1);
+        when(metadataStore.getSearchUnitGoalState(clusterId, "node1")).thenReturn(existingGoalState);
+
+        // When
+        strategy.orchestrate(clusterId);
+
+        // Then
+        // Shard 0 should be skipped (already has PRIMARY role)
+        // Shard 1 should be updated (new shard)
+        verify(metadataStore, times(1)).setSearchUnitGoalState(eq(clusterId), eq("node1"), any(SearchUnitGoalState.class));
+    }
+
+    @Test
     void testOrchestrateSkipsUnchangedGoalStates() throws Exception {
         // Given
         String clusterId = "test-cluster";
