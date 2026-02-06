@@ -18,8 +18,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+
+import org.mockito.ArgumentCaptor;
 
 @ExtendWith(MockitoExtension.class)
 class RollingUpdateOrchestrationStrategyTest {
@@ -644,7 +647,7 @@ class RollingUpdateOrchestrationStrategyTest {
         // Then - verify the method was called and exception was handled
         verify(metadataStore).getAllIndexConfigs(clusterId);
         verify(metadataStore).getPlannedAllocation(clusterId, indexName, "0");
-        verify(metadataStore, times(2)).getSearchUnitGoalState(clusterId, "node1"); // Called in hasGoalStateUpdated and updateNodeGoalState
+        verify(metadataStore, times(3)).getSearchUnitGoalState(clusterId, "node1"); // Called in hasGoalStateUpdated, queueNodeGoalStateUpdate, and flushPendingGoalStates
         // The orchestration should complete without throwing (resilient behavior)
     }
 
@@ -1052,6 +1055,114 @@ class RollingUpdateOrchestrationStrategyTest {
         nodeRouting.put(indexName, List.of(shardInfo));
         actualState.setNodeRouting(nodeRouting);
         return actualState;
+    }
+
+    // ========== BATCHING TESTS ==========
+    
+    @Test
+    void testBatchingMultipleShardsIntoSingleWrite() throws Exception {
+        // Given: A node needs to be updated for multiple shards
+        // This test verifies that all shard assignments are batched into ONE etcd write
+        String clusterId = "test-cluster";
+        String indexName = "test-index";
+        String nodeId = "node1";
+        int numberOfShards = 5; // 5 shards all assigned to same node
+        
+        Index indexConfig = createIndex(indexName, numberOfShards);
+        when(metadataStore.getAllIndexConfigs(clusterId)).thenReturn(List.of(indexConfig));
+        when(metadataStore.getAllNodesWithGoalStates(clusterId)).thenReturn(List.of());
+        
+        // All 5 shards are assigned to the same primary node
+        for (int i = 0; i < numberOfShards; i++) {
+            ShardAllocation planned = new ShardAllocation();
+            planned.setIngestSUs(List.of(nodeId));
+            planned.setSearchSUs(List.of());
+            when(metadataStore.getPlannedAllocation(clusterId, indexName, String.valueOf(i)))
+                    .thenReturn(planned);
+        }
+        
+        // Node has no current goal state (new node)
+        when(metadataStore.getSearchUnitGoalState(clusterId, nodeId)).thenReturn(null);
+        
+        // When
+        strategy.orchestrate(clusterId);
+        
+        // Then: Should write ONCE with all 5 shards (not 5 separate writes)
+        ArgumentCaptor<SearchUnitGoalState> goalStateCaptor = ArgumentCaptor.forClass(SearchUnitGoalState.class);
+        verify(metadataStore, times(1)).setSearchUnitGoalState(eq(clusterId), eq(nodeId), goalStateCaptor.capture());
+        
+        // Verify the single write contains all 5 shards
+        SearchUnitGoalState writtenGoalState = goalStateCaptor.getValue();
+        assertNotNull(writtenGoalState.getLocalShards().get(indexName));
+        assertEquals(5, writtenGoalState.getLocalShards().get(indexName).size(), 
+                "All 5 shards should be in single goal state write");
+    }
+    
+    @Test
+    void testBatchingSkipsWriteWhenGoalStateUnchanged() throws Exception {
+        // Given: A node already has all its shards in goal state
+        String clusterId = "test-cluster";
+        String indexName = "test-index";
+        String nodeId = "node1";
+        
+        Index indexConfig = createIndex(indexName, 1);
+        when(metadataStore.getAllIndexConfigs(clusterId)).thenReturn(List.of(indexConfig));
+        when(metadataStore.getAllNodesWithGoalStates(clusterId)).thenReturn(List.of());
+        
+        ShardAllocation planned = new ShardAllocation();
+        planned.setIngestSUs(List.of(nodeId));
+        planned.setSearchSUs(List.of());
+        when(metadataStore.getPlannedAllocation(clusterId, indexName, "0")).thenReturn(planned);
+        
+        // Node already has this shard in its goal state
+        SearchUnitGoalState existingGoalState = createGoalStateWithShard(indexName, "0", "PRIMARY");
+        when(metadataStore.getSearchUnitGoalState(clusterId, nodeId)).thenReturn(existingGoalState);
+        
+        // When
+        strategy.orchestrate(clusterId);
+        
+        // Then: Should NOT write to etcd (goal state unchanged)
+        verify(metadataStore, never()).setSearchUnitGoalState(eq(clusterId), eq(nodeId), any());
+    }
+    
+    @Test
+    void testBatchingMultipleIndicesForSameNode() throws Exception {
+        // Given: A node is assigned shards from multiple indices
+        String clusterId = "test-cluster";
+        String nodeId = "node1";
+        String index1 = "index-1";
+        String index2 = "index-2";
+        
+        Index indexConfig1 = createIndex(index1, 2);
+        Index indexConfig2 = createIndex(index2, 2);
+        when(metadataStore.getAllIndexConfigs(clusterId)).thenReturn(List.of(indexConfig1, indexConfig2));
+        when(metadataStore.getAllNodesWithGoalStates(clusterId)).thenReturn(List.of());
+        
+        // Node is primary for both indices
+        for (String indexName : List.of(index1, index2)) {
+            for (int i = 0; i < 2; i++) {
+                ShardAllocation planned = new ShardAllocation();
+                planned.setIngestSUs(List.of(nodeId));
+                planned.setSearchSUs(List.of());
+                when(metadataStore.getPlannedAllocation(clusterId, indexName, String.valueOf(i)))
+                        .thenReturn(planned);
+            }
+        }
+        
+        when(metadataStore.getSearchUnitGoalState(clusterId, nodeId)).thenReturn(null);
+        
+        // When
+        strategy.orchestrate(clusterId);
+        
+        // Then: Should write ONCE with shards from BOTH indices
+        ArgumentCaptor<SearchUnitGoalState> goalStateCaptor = ArgumentCaptor.forClass(SearchUnitGoalState.class);
+        verify(metadataStore, times(1)).setSearchUnitGoalState(eq(clusterId), eq(nodeId), goalStateCaptor.capture());
+        
+        SearchUnitGoalState writtenGoalState = goalStateCaptor.getValue();
+        assertNotNull(writtenGoalState.getLocalShards().get(index1), "Should have index-1 shards");
+        assertNotNull(writtenGoalState.getLocalShards().get(index2), "Should have index-2 shards");
+        assertEquals(2, writtenGoalState.getLocalShards().get(index1).size());
+        assertEquals(2, writtenGoalState.getLocalShards().get(index2).size());
     }
 
     // Helper method to create Index with initialized settings
