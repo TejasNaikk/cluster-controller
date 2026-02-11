@@ -1044,6 +1044,11 @@ class RollingUpdateOrchestrationStrategyTest {
     }
 
     private SearchUnitActualState createActualStateWithShard(String indexName, String shardId, String role) {
+        return createActualStateWithShardAndState(indexName, shardId, role, io.clustercontroller.enums.ShardState.STARTED);
+    }
+    
+    private SearchUnitActualState createActualStateWithShardAndState(String indexName, String shardId, String role, 
+            io.clustercontroller.enums.ShardState state) {
         SearchUnitActualState actualState = new SearchUnitActualState();
         Map<String, List<SearchUnitActualState.ShardRoutingInfo>> nodeRouting = new HashMap<>();
         SearchUnitActualState.ShardRoutingInfo shardInfo = new SearchUnitActualState.ShardRoutingInfo();
@@ -1051,7 +1056,7 @@ class RollingUpdateOrchestrationStrategyTest {
         shardInfo.setShardId(Integer.parseInt(shardId));
         // Convert role to lowercase format matching worker output ("primary", "search_replica", "replica")
         shardInfo.setRole("PRIMARY".equals(role) ? "primary" : "replica");
-        shardInfo.setState(io.clustercontroller.enums.ShardState.STARTED);
+        shardInfo.setState(state);
         nodeRouting.put(indexName, List.of(shardInfo));
         actualState.setNodeRouting(nodeRouting);
         return actualState;
@@ -1175,5 +1180,168 @@ class RollingUpdateOrchestrationStrategyTest {
         index.setSettings(settings);
         
         return index;
+    }
+    
+    // ========== SHARD STATE CONVERGENCE TESTS ==========
+    
+    @Test
+    void testInitializingShardsNotConsideredConverged() throws Exception {
+        // Given: Nodes have goal states but shards are still INITIALIZING (not STARTED)
+        // This tests that the rolling update waits for STARTED state before proceeding
+        String clusterId = "test-cluster";
+        String indexName = "test-index";
+        String shardId = "0";
+        
+        Index indexConfig = createIndex(indexName, 1);
+        
+        // Create planned allocation with 10 replica nodes
+        ShardAllocation planned = new ShardAllocation();
+        planned.setIngestSUs(List.of("primary1"));
+        planned.setSearchSUs(List.of("node1", "node2", "node3", "node4", "node5", 
+                                      "node6", "node7", "node8", "node9", "node10"));
+        
+        // node1 and node2 have goal states (already updated)
+        SearchUnitGoalState goalState1 = createGoalStateWithShard(indexName, shardId, "SEARCH_REPLICA");
+        SearchUnitGoalState goalState2 = createGoalStateWithShard(indexName, shardId, "SEARCH_REPLICA");
+        
+        // But their actual states show INITIALIZING (not converged yet)
+        SearchUnitActualState initializingState1 = createActualStateWithShardAndState(
+                indexName, shardId, "SEARCH_REPLICA", io.clustercontroller.enums.ShardState.INITIALIZING);
+        SearchUnitActualState initializingState2 = createActualStateWithShardAndState(
+                indexName, shardId, "SEARCH_REPLICA", io.clustercontroller.enums.ShardState.INITIALIZING);
+        
+        when(metadataStore.getAllIndexConfigs(clusterId)).thenReturn(List.of(indexConfig));
+        when(metadataStore.getPlannedAllocation(clusterId, indexName, shardId)).thenReturn(planned);
+        when(metadataStore.getAllNodesWithGoalStates(clusterId)).thenReturn(List.of());
+        
+        // Primary is converged (already has goal state and is STARTED)
+        when(metadataStore.getSearchUnitGoalState(clusterId, "primary1"))
+                .thenReturn(createGoalStateWithShard(indexName, shardId, "PRIMARY"));
+        when(metadataStore.getSearchUnitActualState(clusterId, "primary1"))
+                .thenReturn(createActualStateWithShard(indexName, shardId, "PRIMARY"));
+        
+        // node1, node2 have goal states but are INITIALIZING
+        when(metadataStore.getSearchUnitGoalState(clusterId, "node1")).thenReturn(goalState1);
+        when(metadataStore.getSearchUnitGoalState(clusterId, "node2")).thenReturn(goalState2);
+        when(metadataStore.getSearchUnitActualState(clusterId, "node1")).thenReturn(initializingState1);
+        when(metadataStore.getSearchUnitActualState(clusterId, "node2")).thenReturn(initializingState2);
+        
+        // Rest have no goal states yet
+        for (int i = 3; i <= 10; i++) {
+            when(metadataStore.getSearchUnitGoalState(clusterId, "node" + i)).thenReturn(null);
+        }
+
+        // When
+        strategy.orchestrate(clusterId);
+
+        // Then: With 10 replicas and 20% limit, max 2 can be in transit
+        // node1 and node2 are already in transit (INITIALIZING), so NO new replica nodes should be updated
+        // Primary already has matching goal state, so it's skipped (unchanged)
+        // Result: 0 writes because all in-scope nodes either already have goal states or are blocked by transit limit
+        verify(metadataStore, never()).setSearchUnitGoalState(eq(clusterId), anyString(), any(SearchUnitGoalState.class));
+    }
+    
+    @Test
+    void testStartedShardsAllowNextBatch() throws Exception {
+        // Given: Some nodes have STARTED shards (converged), allowing next batch to proceed
+        String clusterId = "test-cluster";
+        String indexName = "test-index";
+        String shardId = "0";
+        
+        Index indexConfig = createIndex(indexName, 1);
+        
+        // Create planned allocation with 10 replica nodes
+        ShardAllocation planned = new ShardAllocation();
+        planned.setIngestSUs(List.of("primary1"));
+        planned.setSearchSUs(List.of("node1", "node2", "node3", "node4", "node5", 
+                                      "node6", "node7", "node8", "node9", "node10"));
+        
+        // node1 and node2 have goal states AND are STARTED (converged)
+        SearchUnitGoalState goalState1 = createGoalStateWithShard(indexName, shardId, "SEARCH_REPLICA");
+        SearchUnitGoalState goalState2 = createGoalStateWithShard(indexName, shardId, "SEARCH_REPLICA");
+        SearchUnitActualState startedState1 = createActualStateWithShard(indexName, shardId, "SEARCH_REPLICA");
+        SearchUnitActualState startedState2 = createActualStateWithShard(indexName, shardId, "SEARCH_REPLICA");
+        
+        when(metadataStore.getAllIndexConfigs(clusterId)).thenReturn(List.of(indexConfig));
+        when(metadataStore.getPlannedAllocation(clusterId, indexName, shardId)).thenReturn(planned);
+        when(metadataStore.getAllNodesWithGoalStates(clusterId)).thenReturn(List.of());
+        
+        // Primary is converged
+        when(metadataStore.getSearchUnitGoalState(clusterId, "primary1"))
+                .thenReturn(createGoalStateWithShard(indexName, shardId, "PRIMARY"));
+        when(metadataStore.getSearchUnitActualState(clusterId, "primary1"))
+                .thenReturn(createActualStateWithShard(indexName, shardId, "PRIMARY"));
+        
+        // node1, node2 are STARTED (converged - not in transit)
+        when(metadataStore.getSearchUnitGoalState(clusterId, "node1")).thenReturn(goalState1);
+        when(metadataStore.getSearchUnitGoalState(clusterId, "node2")).thenReturn(goalState2);
+        when(metadataStore.getSearchUnitActualState(clusterId, "node1")).thenReturn(startedState1);
+        when(metadataStore.getSearchUnitActualState(clusterId, "node2")).thenReturn(startedState2);
+        
+        // Rest have no goal states yet
+        for (int i = 3; i <= 10; i++) {
+            when(metadataStore.getSearchUnitGoalState(clusterId, "node" + i)).thenReturn(null);
+        }
+
+        // When
+        strategy.orchestrate(clusterId);
+
+        // Then: node1 and node2 are converged (0 in transit)
+        // With 20% limit of 10 nodes = 2 new nodes can be updated
+        // So 2 new replica nodes should be updated (node3 and node4)
+        // Total writes: 2 replicas (batched writes)
+        verify(metadataStore, times(2)).setSearchUnitGoalState(eq(clusterId), anyString(), any(SearchUnitGoalState.class));
+    }
+    
+    @Test
+    void testMixedInitializingAndStartedShards() throws Exception {
+        // Given: Some nodes STARTED, some INITIALIZING - only INITIALIZING count as transit
+        String clusterId = "test-cluster";
+        String indexName = "test-index";
+        String shardId = "0";
+        
+        Index indexConfig = createIndex(indexName, 1);
+        
+        // 10 replica nodes
+        ShardAllocation planned = new ShardAllocation();
+        planned.setIngestSUs(List.of("primary1"));
+        planned.setSearchSUs(List.of("node1", "node2", "node3", "node4", "node5", 
+                                      "node6", "node7", "node8", "node9", "node10"));
+        
+        when(metadataStore.getAllIndexConfigs(clusterId)).thenReturn(List.of(indexConfig));
+        when(metadataStore.getPlannedAllocation(clusterId, indexName, shardId)).thenReturn(planned);
+        when(metadataStore.getAllNodesWithGoalStates(clusterId)).thenReturn(List.of());
+        
+        // Primary is converged
+        when(metadataStore.getSearchUnitGoalState(clusterId, "primary1"))
+                .thenReturn(createGoalStateWithShard(indexName, shardId, "PRIMARY"));
+        when(metadataStore.getSearchUnitActualState(clusterId, "primary1"))
+                .thenReturn(createActualStateWithShard(indexName, shardId, "PRIMARY"));
+        
+        // node1: STARTED (converged)
+        when(metadataStore.getSearchUnitGoalState(clusterId, "node1"))
+                .thenReturn(createGoalStateWithShard(indexName, shardId, "SEARCH_REPLICA"));
+        when(metadataStore.getSearchUnitActualState(clusterId, "node1"))
+                .thenReturn(createActualStateWithShard(indexName, shardId, "SEARCH_REPLICA"));
+        
+        // node2: INITIALIZING (in transit - counts toward limit)
+        when(metadataStore.getSearchUnitGoalState(clusterId, "node2"))
+                .thenReturn(createGoalStateWithShard(indexName, shardId, "SEARCH_REPLICA"));
+        when(metadataStore.getSearchUnitActualState(clusterId, "node2"))
+                .thenReturn(createActualStateWithShardAndState(indexName, shardId, "SEARCH_REPLICA", 
+                        io.clustercontroller.enums.ShardState.INITIALIZING));
+        
+        // Rest have no goal states yet
+        for (int i = 3; i <= 10; i++) {
+            when(metadataStore.getSearchUnitGoalState(clusterId, "node" + i)).thenReturn(null);
+        }
+
+        // When
+        strategy.orchestrate(clusterId);
+
+        // Then: 1 node is in transit (node2 INITIALIZING)
+        // With 20% limit of 10 = 2 max in transit, so 1 more can be added
+        // So 1 new node should be updated
+        verify(metadataStore, times(1)).setSearchUnitGoalState(eq(clusterId), anyString(), any(SearchUnitGoalState.class));
     }
 }

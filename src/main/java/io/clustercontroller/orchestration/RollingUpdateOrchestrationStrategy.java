@@ -1,6 +1,7 @@
 package io.clustercontroller.orchestration;
 
 import io.clustercontroller.enums.NodeRole;
+import io.clustercontroller.enums.ShardState;
 import io.clustercontroller.metrics.MetricsProvider;
 import io.clustercontroller.models.Index;
 import io.clustercontroller.models.IndexShardProgress;
@@ -231,8 +232,10 @@ public class RollingUpdateOrchestrationStrategy implements GoalStateOrchestratio
             }
             
             List<SearchUnitActualState.ShardRoutingInfo> shards = nodeRouting.get(indexName);
+            // Only consider converged if shard is STARTED (not INITIALIZING/RELOCATING)
             return shards.stream()
-                    .anyMatch(shard -> String.valueOf(shard.getShardId()).equals(shardId));
+                    .anyMatch(shard -> String.valueOf(shard.getShardId()).equals(shardId) 
+                            && ShardState.STARTED.equals(shard.getState()));
         } catch (Exception e) {
             log.error("Failed to check actual state for node {}: {}", nodeId, e.getMessage(), e);
             return false;
