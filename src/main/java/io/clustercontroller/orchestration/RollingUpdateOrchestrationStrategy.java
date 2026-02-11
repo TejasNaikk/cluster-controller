@@ -1,6 +1,7 @@
 package io.clustercontroller.orchestration;
 
 import io.clustercontroller.enums.NodeRole;
+import io.clustercontroller.enums.ShardState;
 import io.clustercontroller.metrics.MetricsProvider;
 import io.clustercontroller.models.Index;
 import io.clustercontroller.models.IndexShardProgress;
@@ -45,6 +46,10 @@ public class RollingUpdateOrchestrationStrategy implements GoalStateOrchestratio
             cleanupStaleGoalStates(clusterId);
             
             // PHASE 2: Orchestrate new goal states (rolling update)
+            // Batch all goal state updates per node to minimize etcd writes
+            // Key: nodeId, Value: accumulated goal state for that node
+            Map<String, SearchUnitGoalState> pendingGoalStateUpdates = new HashMap<>();
+            
             // Get all index configs to iterate over indexes and shards
             List<Index> indexConfigs = metadataStore.getAllIndexConfigs(clusterId);
             
@@ -71,7 +76,7 @@ public class RollingUpdateOrchestrationStrategy implements GoalStateOrchestratio
                         }
                         
                         // Process this index-shard with rolling update logic
-                        orchestrateIndexShard(indexName, shardId, planned, clusterId);
+                        orchestrateIndexShard(indexName, shardId, planned, clusterId, pendingGoalStateUpdates);
                         
                     } catch (Exception e) {
                         log.error("Failed to orchestrate shard {}/{}: {}", indexName, shardId, e.getMessage(), e);
@@ -79,6 +84,9 @@ public class RollingUpdateOrchestrationStrategy implements GoalStateOrchestratio
                     }
                 }
             }
+            
+            // PHASE 3: Flush all pending goal state updates to etcd (one write per node)
+            flushPendingGoalStates(clusterId, pendingGoalStateUpdates);
             
             // Cleanup stale gauges for deleted indices/shards
             metricsProvider.cleanupStaleGauges();
@@ -89,19 +97,20 @@ public class RollingUpdateOrchestrationStrategy implements GoalStateOrchestratio
         }
     }
     
-    private void orchestrateIndexShard(String indexName, String shardId, ShardAllocation planned, String clusterId) {
+    private void orchestrateIndexShard(String indexName, String shardId, ShardAllocation planned, String clusterId,
+                                        Map<String, SearchUnitGoalState> pendingGoalStateUpdates) {
         // Process IngestSUs (Primary nodes) separately
         List<String> ingestSUs = planned.getIngestSUs();
         if (!ingestSUs.isEmpty()) {
             log.debug("Processing {} IngestSUs (primary nodes) for shard {}/{}", ingestSUs.size(), indexName, shardId);
-            orchestrateNodeGroup(indexName, shardId, ingestSUs, NodeRole.PRIMARY, planned, clusterId);
+            orchestrateNodeGroup(indexName, shardId, ingestSUs, NodeRole.PRIMARY, planned, clusterId, pendingGoalStateUpdates);
         }
         
         // Process SearchSUs (Replica nodes) separately
         List<String> searchSUs = planned.getSearchSUs();
         if (!searchSUs.isEmpty()) {
             log.debug("Processing {} SearchSUs (replica nodes) for shard {}/{}", searchSUs.size(), indexName, shardId);
-            orchestrateNodeGroup(indexName, shardId, searchSUs, NodeRole.REPLICA, planned, clusterId);
+            orchestrateNodeGroup(indexName, shardId, searchSUs, NodeRole.REPLICA, planned, clusterId, pendingGoalStateUpdates);
         }
         
         if (ingestSUs.isEmpty() && searchSUs.isEmpty()) {
@@ -109,7 +118,9 @@ public class RollingUpdateOrchestrationStrategy implements GoalStateOrchestratio
         }
     }
     
-    private void orchestrateNodeGroup(String indexName, String shardId, List<String> nodeGroup, NodeRole role, ShardAllocation planned, String clusterId) {
+    private void orchestrateNodeGroup(String indexName, String shardId, List<String> nodeGroup, NodeRole role, 
+                                       ShardAllocation planned, String clusterId,
+                                       Map<String, SearchUnitGoalState> pendingGoalStateUpdates) {
         String indexShard = indexName + "/" + shardId;
         
         // Check current progress for this node group
@@ -135,11 +146,11 @@ public class RollingUpdateOrchestrationStrategy implements GoalStateOrchestratio
             
             for (String nodeId : nextBatch) {
                 try {
-                    updateNodeGoalState(nodeId, indexName, shardId, planned, clusterId);
+                    queueNodeGoalStateUpdate(nodeId, indexName, shardId, planned, clusterId, pendingGoalStateUpdates);
                     successfulUpdates++;
-                    log.debug("Started update for {} node {} with shard {}/{}", role, nodeId, indexName, shardId);
+                    log.debug("Queued update for {} node {} with shard {}/{}", role, nodeId, indexName, shardId);
                 } catch (Exception e) {
-                    log.error("Failed to start update for {} node {}: {}", role, nodeId, e.getMessage(), e);
+                    log.error("Failed to queue update for {} node {}: {}", role, nodeId, e.getMessage(), e);
                 }
             }
         } else {
@@ -221,8 +232,10 @@ public class RollingUpdateOrchestrationStrategy implements GoalStateOrchestratio
             }
             
             List<SearchUnitActualState.ShardRoutingInfo> shards = nodeRouting.get(indexName);
+            // Only consider converged if shard is STARTED (not INITIALIZING/RELOCATING)
             return shards.stream()
-                    .anyMatch(shard -> String.valueOf(shard.getShardId()).equals(shardId));
+                    .anyMatch(shard -> String.valueOf(shard.getShardId()).equals(shardId) 
+                            && ShardState.STARTED.equals(shard.getState()));
         } catch (Exception e) {
             log.error("Failed to check actual state for node {}: {}", nodeId, e.getMessage(), e);
             return false;
@@ -236,40 +249,103 @@ public class RollingUpdateOrchestrationStrategy implements GoalStateOrchestratio
                 .collect(java.util.stream.Collectors.toList());
     }
     
-    private void updateNodeGoalState(String nodeId, String indexName, String shardId, ShardAllocation planned, String clusterId) throws Exception {
+    /**
+     * Queue a goal state update for a node. Instead of writing to etcd immediately,
+     * accumulates the change in pendingGoalStateUpdates map to be flushed later.
+     * This batches all shard assignments per node into a single etcd write.
+     */
+    private void queueNodeGoalStateUpdate(String nodeId, String indexName, String shardId, ShardAllocation planned, 
+                                          String clusterId, Map<String, SearchUnitGoalState> pendingGoalStateUpdates) throws Exception {
         try {
-            // Get current goal state for the node
-            SearchUnitGoalState currentGoalState = metadataStore.getSearchUnitGoalState(clusterId, nodeId);
-            
-            // If null, create new one
-            if (currentGoalState == null) {
-                currentGoalState = new SearchUnitGoalState();
-            }
-            
             // Determine role based on whether this node is in IngestSUs or SearchSUs
             String role = planned.getIngestSUs().contains(nodeId) ? NodeRole.PRIMARY.getValue() : NodeRole.REPLICA.getValue();
             
-            // Update goal state with new shard allocation
-            SearchUnitGoalState newGoalState = updateGoalStateForIndexShard(currentGoalState, indexName, shardId, role);
+            // Get or create pending goal state for this node
+            SearchUnitGoalState pendingState = pendingGoalStateUpdates.computeIfAbsent(nodeId, k -> {
+                try {
+                    // Start with current state from etcd (or empty if none exists)
+                    SearchUnitGoalState current = metadataStore.getSearchUnitGoalState(clusterId, nodeId);
+                    if (current != null) {
+                        // Create a copy to avoid modifying the cached version
+                        SearchUnitGoalState copy = new SearchUnitGoalState();
+                        copy.setLocalShards(new HashMap<>(current.getLocalShards()));
+                        // Deep copy the inner maps
+                        for (Map.Entry<String, Map<String, String>> entry : current.getLocalShards().entrySet()) {
+                            copy.getLocalShards().put(entry.getKey(), new HashMap<>(entry.getValue()));
+                        }
+                        return copy;
+                    }
+                    return new SearchUnitGoalState();
+                } catch (Exception e) {
+                    log.warn("Failed to get current goal state for node {}, starting fresh: {}", nodeId, e.getMessage());
+                    return new SearchUnitGoalState();
+                }
+            });
             
-            // Set new goal state in etcd
-            metadataStore.setSearchUnitGoalState(clusterId, nodeId, newGoalState);
+            // Check if the shard with this role already exists
+            if (pendingState.hasShardWithRole(indexName, shardId, role)) {
+                log.debug("Goal state for node {} already has shard {}/{} with role {}, skipping", 
+                    nodeId, indexName, shardId, role);
+                return;
+            }
+            
+            // Add shard to pending state (no etcd write here)
+            pendingState.getLocalShards().computeIfAbsent(indexName, k -> new HashMap<>()).put(shardId, role);
+            log.debug("Queued goal state update for node {} with shard {}/{} role {}", nodeId, indexName, shardId, role);
             
         } catch (Exception e) {
-            log.error("Failed to update goal state for node {}: {}", nodeId, e.getMessage(), e);
+            log.error("Failed to queue goal state update for node {}: {}", nodeId, e.getMessage(), e);
             throw e;
         }
     }
     
-    private SearchUnitGoalState updateGoalStateForIndexShard(SearchUnitGoalState current, String indexName, String shardId, String role) {
-        if (current == null) {
-            current = new SearchUnitGoalState();
+    /**
+     * Flush all pending goal state updates to etcd. Each node gets exactly one write
+     * containing all accumulated shard assignments. Compares with current state to
+     * skip writes if unchanged.
+     * 
+     * @param clusterId the cluster ID
+     * @param pendingGoalStateUpdates map of nodeId -> accumulated goal state
+     */
+    private void flushPendingGoalStates(String clusterId, Map<String, SearchUnitGoalState> pendingGoalStateUpdates) {
+        if (pendingGoalStateUpdates.isEmpty()) {
+            log.debug("No pending goal state updates to flush");
+            return;
         }
         
-        // Add new shard allocation using the localShards structure
-        current.getLocalShards().computeIfAbsent(indexName, k -> new HashMap<>()).put(shardId, role);
+        log.info("Flushing {} pending goal state updates to etcd", pendingGoalStateUpdates.size());
+        int successCount = 0;
+        int skipCount = 0;
         
-        return current;
+        for (Map.Entry<String, SearchUnitGoalState> entry : pendingGoalStateUpdates.entrySet()) {
+            String nodeId = entry.getKey();
+            SearchUnitGoalState newGoalState = entry.getValue();
+            
+            try {
+                // Read current state from etcd to compare - skip write if unchanged
+                SearchUnitGoalState currentState = metadataStore.getSearchUnitGoalState(clusterId, nodeId);
+                
+                if (currentState != null && currentState.equals(newGoalState)) {
+                    log.debug("Goal state unchanged for node {}, skipping write", nodeId);
+                    skipCount++;
+                    continue;
+                }
+                
+                // Write the accumulated goal state in one etcd PUT
+                metadataStore.setSearchUnitGoalState(clusterId, nodeId, newGoalState);
+                successCount++;
+                
+                int shardCount = newGoalState.getLocalShards().values().stream()
+                    .mapToInt(Map::size)
+                    .sum();
+                log.info("Flushed goal state for node {} ({} total shards)", nodeId, shardCount);
+                
+            } catch (Exception e) {
+                log.error("Failed to flush goal state for node {}: {}", nodeId, e.getMessage(), e);
+            }
+        }
+        
+        log.info("Goal state flush complete: {} written, {} skipped (unchanged)", successCount, skipCount);
     }
     
     /**
