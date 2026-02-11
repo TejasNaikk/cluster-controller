@@ -143,12 +143,6 @@ class LeaderElectionTest {
         when(leaseGrantResponse.getID()).thenReturn(12345L);
         when(leaseClient.grant(anyLong())).thenReturn(CompletableFuture.completedFuture(leaseGrantResponse));
         
-        // Setup failed election campaign due to keep alive error
-        CompletableFuture<CampaignResponse> failedCampaign = new CompletableFuture<>();
-        failedCampaign.completeExceptionally(new RuntimeException("Campaign failed due to keep alive error"));
-        when(electionClient.campaign(any(ByteSequence.class), anyLong(), any(ByteSequence.class)))
-                .thenReturn(failedCampaign);
-        
         // Setup keep alive mock to simulate error callback
         doAnswer(invocation -> {
             StreamObserver<LeaseKeepAliveResponse> observer = invocation.getArgument(1);
