@@ -104,7 +104,7 @@ class LppTasksTest {
     @Test
     void orchestrationTaskReturnsConvergedWhenAllNodesInSync() {
         ctx.setCurrentAllocations(Map.of("k", allocationFor("grocery", "idx", 0)));
-        when(orchestrator.orchestrate(any(), any(), any())).thenReturn(Optional.empty());
+        when(orchestrator.orchestrate(any(), any(), any())).thenReturn(List.of());
 
         String result = new LppOrchestrationTask(ctx).execute();
         assertThat(result).isEqualTo("CONVERGED");
@@ -113,7 +113,7 @@ class LppTasksTest {
     @Test
     void orchestrationTaskReturnsSuccessWhenNodeUpdated() {
         ctx.setCurrentAllocations(Map.of("k", allocationFor("grocery", "idx", 0)));
-        when(orchestrator.orchestrate(any(), any(), any())).thenReturn(Optional.of("node-1"));
+        when(orchestrator.orchestrate(any(), any(), any())).thenReturn(List.of("node-1"));
 
         String result = new LppOrchestrationTask(ctx).execute();
         assertThat(result).isEqualTo("SUCCESS");

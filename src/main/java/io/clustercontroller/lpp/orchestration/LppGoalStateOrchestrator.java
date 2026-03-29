@@ -5,25 +5,38 @@ import io.clustercontroller.lpp.store.LppMetadataStore;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Pushes goal states (manifests) to LPP nodes via etcd.
  *
- * <p>For each node in the planned allocations, builds an {@link LppNodeGoalState}
- * containing the list of shards that node should serve, then writes it to etcd at
- * /lpp/{env}/nodes/{nodeName}/goal-state.
+ * <h3>20% rollout policy</h3>
+ * <p>When nodes within a group need updating, at most 20% of that group's nodes
+ * are updated per orchestration call (minimum 1). This applies independently per
+ * group, so multiple groups can make progress simultaneously while each group's
+ * shard downloads are staggered to avoid a thundering herd.
  *
- * <p>Rolling update: nodes are updated one at a time per invocation to avoid a
- * thundering herd of simultaneous shard downloads. Each call to
- * {@link #orchestrate(Map, Map, String)} processes at most one changed node.
- * Call repeatedly (e.g., from a recurring task) until all nodes converge.
+ * <p>Example — group with 3 replicas: ceil(20% × 3) = 1 node per tick.
+ * Example — group with 10 replicas: ceil(20% × 10) = 2 nodes per tick.
  *
- * <p>Observe-only mode: when {@code observeOnly=true} the goal state is computed
- * but NOT written to etcd. Useful during the initial rollout phase where the
- * controller is just building state.
+ * <h3>Goal state per node</h3>
+ * <p>Each node's goal state is built by inverting the allocation map: for every
+ * shard allocated to a group, all nodes in that group receive that shard in their
+ * goal state. Nodes within the same group therefore always have identical goal
+ * states — they are replicas.
+ *
+ * <h3>Convergence check</h3>
+ * <p>Before pushing, the current etcd goal state is compared against the desired
+ * state. A node is only updated if its shard set or any fullIndexName differs.
+ *
+ * <h3>Observe-only mode</h3>
+ * <p>When {@code observeOnly=true} the goal state is computed and logged but NOT
+ * written to etcd. Used during initial rollout for dry-run validation.
  */
 @Slf4j
 public class LppGoalStateOrchestrator {
+
+    private static final double ROLLOUT_FRACTION = 0.20;
 
     private final LppMetadataStore metadataStore;
     private final boolean observeOnly;
@@ -34,65 +47,106 @@ public class LppGoalStateOrchestrator {
     }
 
     /**
-     * Compute and (optionally) push one node's goal state.
+     * Compute desired goal states for all nodes and push updates to divergent nodes,
+     * respecting the 20%-per-group rollout policy.
      *
-     * @param allocations  current planned allocations from {@link io.clustercontroller.lpp.allocation.LppShardAllocator}
-     * @param groups       current group topology
-     * @param region       region to set in goal state
-     * @return the node name that was updated, or empty if all nodes are already converged
+     * @param allocations current planned allocations (shardKey → allocation)
+     * @param groups      current group topology (groupId → LppGroup)
+     * @param region      region label written into goal states
+     * @return list of node names updated this tick (empty = fully converged)
      */
-    public Optional<String> orchestrate(
+    public List<String> orchestrate(
             Map<String, LppShardPlannedAllocation> allocations,
             Map<String, LppGroup> groups,
             String region) {
 
-        // Build desired goal state per node: nodeName → LppNodeGoalState
+        if (allocations.isEmpty()) {
+            log.debug("LPP orchestrator: no allocations, nothing to do");
+            return List.of();
+        }
+
         Map<String, LppNodeGoalState> desired = buildDesiredGoalStates(allocations, groups, region);
+
+        // Find all divergent nodes grouped by their replica group.
+        // We need the groupId per node to apply the per-group rollout cap.
+        Map<String, String> nodeToGroup = buildNodeToGroupMap(groups);
+
+        // Collect divergent nodes per group
+        Map<String, List<String>> divergentByGroup = new LinkedHashMap<>();
 
         for (Map.Entry<String, LppNodeGoalState> entry : desired.entrySet()) {
             String nodeName = entry.getKey();
             LppNodeGoalState desiredState = entry.getValue();
 
             Optional<LppNodeGoalState> current = metadataStore.getNodeGoalState(nodeName);
-
             if (current.isPresent() && isSameGoalState(current.get(), desiredState)) {
-                log.debug("LPP orchestrator: node {} goal state unchanged, skipping", nodeName);
+                log.debug("LPP orchestrator: node {} converged", nodeName);
                 continue;
             }
 
-            desiredState.bumpVersion();
-
-            if (observeOnly) {
-                log.info("LPP orchestrator [observe-only]: would update node {} → {} shards",
-                        nodeName, desiredState.getShards().size());
-            } else {
-                metadataStore.putNodeGoalState(desiredState);
-                log.info("LPP orchestrator: pushed goal state to node {} ({} shards)",
-                        nodeName, desiredState.getShards().size());
-            }
-
-            // Rolling update: process one node per call
-            return Optional.of(nodeName);
+            String groupId = nodeToGroup.getOrDefault(nodeName, "unknown");
+            divergentByGroup.computeIfAbsent(groupId, k -> new ArrayList<>()).add(nodeName);
         }
 
-        log.debug("LPP orchestrator: all nodes converged");
-        return Optional.empty();
+        if (divergentByGroup.isEmpty()) {
+            log.info("LPP orchestrator: all nodes converged");
+            return List.of();
+        }
+
+        // For each group, push to at most 20% of its divergent nodes
+        List<String> updated = new ArrayList<>();
+
+        for (Map.Entry<String, List<String>> entry : divergentByGroup.entrySet()) {
+            String groupId = entry.getKey();
+            List<String> divergentNodes = entry.getValue();
+
+            int groupSize = groups.containsKey(groupId)
+                    ? groups.get(groupId).getNodes().size()
+                    : divergentNodes.size();
+
+            int rolloutCap = Math.max(1, (int) Math.ceil(groupSize * ROLLOUT_FRACTION));
+            List<String> batch = divergentNodes.subList(0, Math.min(rolloutCap, divergentNodes.size()));
+
+            log.info("LPP orchestrator: group {} — {} divergent nodes, rolling out {}/{} (20% cap)",
+                    groupId, divergentNodes.size(), batch.size(), groupSize);
+
+            for (String nodeName : batch) {
+                LppNodeGoalState desiredState = desired.get(nodeName);
+                desiredState.bumpVersion();
+
+                if (observeOnly) {
+                    log.info("LPP orchestrator [observe-only]: would push to node {} ({} shards)",
+                            nodeName, desiredState.getShards().size());
+                } else {
+                    metadataStore.putNodeGoalState(desiredState);
+                    log.info("LPP orchestrator: pushed goal state to node {} ({} shards, version {})",
+                            nodeName, desiredState.getShards().size(), desiredState.getVersion());
+                }
+
+                updated.add(nodeName);
+            }
+        }
+
+        return updated;
     }
 
     /**
-     * Build the full desired goal state map: nodeName → LppNodeGoalState.
-     * Each node gets the shards from every allocation that includes it.
+     * Invert the allocation map to produce a per-node goal state.
+     *
+     * <p>For every shard in every allocation, all nodes in the allocated groups
+     * receive that shard. Nodes within the same group end up with identical shard
+     * lists (they are replicas).
      */
     Map<String, LppNodeGoalState> buildDesiredGoalStates(
             Map<String, LppShardPlannedAllocation> allocations,
             Map<String, LppGroup> groups,
             String region) {
 
-        // nodeName → node's role (derived from its group)
+        // nodeName → role (from its group)
         Map<String, String> nodeRoles = new HashMap<>();
-        groups.values().forEach(g -> g.getNodes().forEach(n -> nodeRoles.put(n.getNodeName(), g.getRole())));
+        groups.values().forEach(g ->
+                g.getNodes().forEach(n -> nodeRoles.put(n.getNodeName(), g.getRole())));
 
-        // nodeName → LppNodeGoalState (accumulate shards)
         Map<String, LppNodeGoalState> goalStates = new LinkedHashMap<>();
 
         for (LppShardPlannedAllocation allocation : allocations.values()) {
@@ -115,8 +169,8 @@ public class LppGoalStateOrchestrator {
     }
 
     /**
-     * Two goal states are equivalent if they have the same set of shard keys and
-     * the same fullIndexName per shard (i.e., no version change).
+     * Two goal states are the same if every shard key is present and the
+     * fullIndexName matches (catches index version upgrades).
      */
     private boolean isSameGoalState(LppNodeGoalState current, LppNodeGoalState desired) {
         if (current.getShards().size() != desired.getShards().size()) return false;
@@ -128,5 +182,13 @@ public class LppGoalStateOrchestrator {
             if (!s.getFullIndexName().equals(currentMap.get(s.getKey()))) return false;
         }
         return true;
+    }
+
+    /** Build a reverse map: nodeName → groupId, for rollout cap calculation. */
+    private Map<String, String> buildNodeToGroupMap(Map<String, LppGroup> groups) {
+        Map<String, String> map = new HashMap<>();
+        groups.values().forEach(g ->
+                g.getNodes().forEach(n -> map.put(n.getNodeName(), g.getGroupId())));
+        return map;
     }
 }
