@@ -29,11 +29,12 @@ public class LppNodeActualState {
     @JsonProperty("port")
     private int port;
 
-    /** Odin instance name — used as group identifier. */
+    /** Odin instance name — identifies the LPP multi-tenant cluster this node belongs to. */
     @JsonProperty("odin_instance")
     private String odinInstance;
 
-    /** Shard ID from Grail topology. Temporary group key until LPP nodes self-report. */
+    /** Shard ID from Grail topology. Used as the group key — nodes with the same grailShardId
+     * form one replica group (3 replicas all serving identical shards). */
     @JsonProperty("grail_shard_id")
     private String grailShardId;
 

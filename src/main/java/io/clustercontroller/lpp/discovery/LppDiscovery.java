@@ -22,9 +22,9 @@ import java.util.*;
  *       Grail-sourced view once LPP nodes are ready.</li>
  * </ol>
  *
- * <p>Groups are derived from the {@code odinInstance} field of each node — one Odin
- * instance = one replica group. The {@code grailShardId} is a temporary secondary
- * grouping key used until LPP nodes expose their own shard registry.
+ * <p>Groups are derived from the {@code grailShardId} field of each node. One Odin
+ * instance is the entire LPP multi-tenant cluster; within it, each {@code grailShardId}
+ * identifies one replica group (3 nodes that all serve the same set of shards).
  */
 @Slf4j
 public class LppDiscovery {
@@ -40,8 +40,9 @@ public class LppDiscovery {
     }
 
     /**
-     * Run a full discovery cycle. Returns the current map of groups keyed by groupId
-     * (= Odin instance name).
+     * Run a full discovery cycle. Returns the current map of groups keyed by grailShardId.
+     * The namespace identifies the Odin instance (the whole LPP cluster); groups within it
+     * are differentiated by grailShardId.
      */
     public Map<String, LppGroup> discover() {
         log.info("LPP discovery starting for namespace: {}", namespace);
@@ -93,16 +94,17 @@ public class LppDiscovery {
     }
 
     /**
-     * Build LppGroup objects from actual-states. Groups are keyed by odinInstance.
-     * Nodes are classified by grailShardId within each group.
+     * Build LppGroup objects from actual-states. Groups are keyed by grailShardId.
+     * One Odin instance = the whole LPP cluster; grailShardId identifies each replica group
+     * within it (each group = 3 nodes all serving the same shards).
      */
     private Map<String, LppGroup> buildGroups(Map<String, LppNodeActualState> states) {
         Map<String, LppGroup> groups = new LinkedHashMap<>();
 
         for (LppNodeActualState state : states.values()) {
-            String groupId = state.getOdinInstance();
+            String groupId = state.getGrailShardId();
             if (groupId == null || groupId.isBlank()) {
-                log.warn("LPP discovery: node {} has no odinInstance, skipping", state.getNodeName());
+                log.warn("LPP discovery: node {} has no grailShardId, skipping", state.getNodeName());
                 continue;
             }
 
