@@ -47,9 +47,9 @@ public class LppShardAllocator {
     private final LppMetadataStore metadataStore;
     private final AllocationStrategy strategy;
 
-    /** Default constructor uses uniform (least-loaded) strategy. */
+    /** Default constructor uses random allocation strategy. */
     public LppShardAllocator(LppMetadataStore metadataStore) {
-        this(metadataStore, new UniformAllocationStrategy());
+        this(metadataStore, new RandomAllocationStrategy());
     }
 
     /** Constructor for injecting a custom allocation strategy. */
