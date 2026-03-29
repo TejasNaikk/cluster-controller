@@ -1,0 +1,15 @@
+# LPP controller profile configuration
+# Activated by: --spring.profiles.active=lpp
+
+lpp:
+  # Grail namespace / Odin service name for this deployment
+  namespace: ${LPP_NAMESPACE:delivery-grocery}
+
+  # Region label written into node goal states (must match LP node's region filter)
+  region: ${LPP_REGION:local}
+
+  # When true, compute desired state but do not write to etcd (initial rollout safety switch)
+  observeOnly: ${LPP_OBSERVE_ONLY:false}
+
+  # How often to run the four-task control loop (seconds)
+  intervalSeconds: ${LPP_INTERVAL_SECONDS:30}
