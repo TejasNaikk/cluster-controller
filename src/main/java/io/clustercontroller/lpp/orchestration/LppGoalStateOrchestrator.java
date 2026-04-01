@@ -208,9 +208,9 @@ public class LppGoalStateOrchestrator {
                 .map(LppShardActualState::getShardKey)
                 .collect(Collectors.toSet());
 
-        for (LppShardEntry desired : desired.getShards()) {
-            if (!activeShardKeys.contains(desired.getKey())) {
-                log.debug("LPP orchestrator: node {} shard {} not yet ACTIVE", nodeName, desired.getKey());
+        for (LppShardEntry shard : desired.getShards()) {
+            if (!activeShardKeys.contains(shard.getKey())) {
+                log.debug("LPP orchestrator: node {} shard {} not yet ACTIVE", nodeName, shard.getKey());
                 return false;
             }
         }
