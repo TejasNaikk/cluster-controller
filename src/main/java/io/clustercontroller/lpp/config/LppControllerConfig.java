@@ -126,8 +126,9 @@ public class LppControllerConfig {
     @Bean
     public LeaderElection lppLeaderElection(Client lppEtcdClient) {
         String nodeId = "lpp-controller-" + namespace + "-" + java.util.UUID.randomUUID();
-        log.info("LPP: leader election node ID = {}", nodeId);
-        LeaderElection election = new LeaderElection(lppEtcdClient, nodeId);
+        String electionKey = "/lpp/" + namespace + "/leader-election";
+        log.info("LPP: leader election node ID = {}, key = {}", nodeId, electionKey);
+        LeaderElection election = new LeaderElection(lppEtcdClient, nodeId, electionKey);
         election.startElection();
         return election;
     }

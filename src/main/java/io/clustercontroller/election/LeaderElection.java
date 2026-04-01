@@ -22,9 +22,10 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 public class LeaderElection {
     
     private static final String CONTROLLER_ELECTION_KEY = "/controller-leader-election";
-    
+
     private final Client etcdClient;
     private final String nodeId;
+    private final String electionKey;
     private final AtomicBoolean isLeader = new AtomicBoolean(false);
     private final AtomicBoolean isShuttingDown = new AtomicBoolean(false);
     
@@ -36,8 +37,13 @@ public class LeaderElection {
      * @param nodeId the unique identifier for this node
      */
     public LeaderElection(Client etcdClient, String nodeId) {
+        this(etcdClient, nodeId, CONTROLLER_ELECTION_KEY);
+    }
+
+    public LeaderElection(Client etcdClient, String nodeId, String electionKey) {
         this.etcdClient = etcdClient;
         this.nodeId = nodeId;
+        this.electionKey = electionKey;
     }
     
     /**
@@ -55,7 +61,7 @@ public class LeaderElection {
 
         CompletableFuture.runAsync(() -> {
             try {
-                ByteSequence electionKeyBytes = ByteSequence.from(CONTROLLER_ELECTION_KEY, UTF_8);
+                ByteSequence electionKeyBytes = ByteSequence.from(electionKey, UTF_8);
                 ByteSequence nodeIdBytes = ByteSequence.from(nodeId, UTF_8);
 
                 // Create a lease for the election
