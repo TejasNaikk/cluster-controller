@@ -53,6 +53,13 @@ public class LppDiscovery {
 
         for (LppNodeActualState state : grailNodes) {
             state.setHeartbeatTimestampMs(System.currentTimeMillis());
+            // Preserve shard states written by shadow sim or real LP nodes — only update
+            // the Grail-derived metadata (host, port, zone, etc.).
+            Optional<LppNodeActualState> existing = metadataStore.getNodeActualState(state.getNodeName());
+            if (existing.isPresent() && !existing.get().getShardStates().isEmpty()) {
+                state.setShardStates(existing.get().getShardStates());
+                state.setShardCount(existing.get().getShardCount());
+            }
             metadataStore.putNodeActualState(state);
         }
 
