@@ -79,7 +79,7 @@ class LppTasksTest {
     void allocationTaskSucceedsAndStoresAllocations() {
         ctx.setCurrentGroups(Map.of("g1", new LppGroup("g1", "z", "INGEST")));
         when(metadataStore.getAllIndexDefinitions()).thenReturn(
-                List.of(new LppIndexDefinition("grocery", "idx", "idx.1", 2, 1, "INGEST")));
+                List.of(new LppIndexDefinition("grocery", "idx", "idx.1", 2, 1)));
 
         LppShardPlannedAllocation a0 = allocationFor("grocery", "idx", 0);
         LppShardPlannedAllocation a1 = allocationFor("grocery", "idx", 1);

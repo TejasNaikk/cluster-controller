@@ -79,8 +79,10 @@ public class LppGoalStateOrchestrator {
             LppNodeGoalState desiredState = entry.getValue();
 
             Optional<LppNodeGoalState> current = metadataStore.getNodeGoalState(nodeName);
-            if (current.isPresent() && isSameGoalState(current.get(), desiredState)) {
-                log.debug("LPP orchestrator: node {} converged", nodeName);
+            if (current.isPresent()
+                    && isSameGoalState(current.get(), desiredState)
+                    && isActuallyConverged(nodeName, desiredState)) {
+                log.debug("LPP orchestrator: node {} converged (goal state + actual state ACTIVE)", nodeName);
                 continue;
             }
 
@@ -180,6 +182,37 @@ public class LppGoalStateOrchestrator {
 
         for (LppShardEntry s : desired.getShards()) {
             if (!s.getFullIndexName().equals(currentMap.get(s.getKey()))) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Returns true when all desired shards for this node are ACTIVE in the node's actual state.
+     *
+     * <p>This gates 20% batch progression on real convergence rather than just goal-state
+     * written. In shadow mode, {@link LppShadowNodeSimulator} writes fake ACTIVE actual states
+     * so the full loop can be exercised without real LP nodes.
+     *
+     * <p>If the node has no actual state recorded yet, it is not converged.
+     */
+    private boolean isActuallyConverged(String nodeName, LppNodeGoalState desired) {
+        Optional<LppNodeActualState> actualOpt = metadataStore.getNodeActualState(nodeName);
+        if (actualOpt.isEmpty()) {
+            log.debug("LPP orchestrator: node {} has no actual state — not converged", nodeName);
+            return false;
+        }
+
+        LppNodeActualState actual = actualOpt.get();
+        Set<String> activeShardKeys = actual.getShardStates().stream()
+                .filter(LppShardActualState::isActive)
+                .map(LppShardActualState::getShardKey)
+                .collect(Collectors.toSet());
+
+        for (LppShardEntry desired : desired.getShards()) {
+            if (!activeShardKeys.contains(desired.getKey())) {
+                log.debug("LPP orchestrator: node {} shard {} not yet ACTIVE", nodeName, desired.getKey());
+                return false;
+            }
         }
         return true;
     }

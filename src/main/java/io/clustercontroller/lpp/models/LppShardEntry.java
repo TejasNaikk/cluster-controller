@@ -7,8 +7,16 @@ import lombok.NoArgsConstructor;
 /**
  * A single shard entry — the unit of allocation in LPP.
  *
- * <p>Key = "{collection}.{indexName}.{shardId}" (e.g., "grocery.local_index.0").
- * This is the same key format used by LppShardSlot on the data plane.
+ * <p>Key = "{collection}.{fullIndexName}.{shardId}"
+ * e.g. "grocery.local_index.1.3" — collection=grocery, concrete index=local_index.1, shard=3.
+ *
+ * <p>The key uses fullIndexName (the concrete versioned index), NOT indexName (the logical alias).
+ * This is critical because local_index.1 shard 3 and local_index.2 shard 3 are completely
+ * different shards with different segment data. During an index upgrade both versions coexist
+ * simultaneously in the system and must have distinct keys.
+ *
+ * <p>indexName ("local_index") is kept as metadata for routing alias resolution — the gateway
+ * can look up "which fullIndexName does local_index currently point to" to find the active version.
  */
 @Data
 @NoArgsConstructor
@@ -38,8 +46,8 @@ public class LppShardEntry {
         this.shardId = shardId;
     }
 
-    /** Canonical key: collection.indexName.shardId */
+    /** Canonical key: collection.fullIndexName.shardId — e.g. "grocery.local_index.1.3" */
     public String getKey() {
-        return collection + "." + indexName + "." + shardId;
+        return collection + "." + fullIndexName + "." + shardId;
     }
 }

@@ -34,60 +34,60 @@ class LppShardAllocatorTest {
 
     @Test
     void producesOneAllocationPerShard() {
-        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 4, 1, "INGEST");
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 4, 1);
 
         Map<String, LppShardPlannedAllocation> result = allocator.allocate(
-                threeGroups("INGEST"), List.of(index));
+                threeGroups(), List.of(index));
 
         assertThat(result).hasSize(4);
-        assertThat(result).containsKeys("grocery.idx.0", "grocery.idx.1", "grocery.idx.2", "grocery.idx.3");
+        assertThat(result).containsKeys("grocery.idx.1.0", "grocery.idx.1.1", "grocery.idx.1.2", "grocery.idx.1.3");
     }
 
-    // ---- numGroups respected ----
+    // ---- numIngestGroups respected ----
 
     @Test
-    void eachShardAssignedToExactlyNumGroupsGroups_numGroupsOne() {
-        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 3, 1, "INGEST");
+    void eachShardAssignedToExactlyNumIngestGroups_one() {
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 3, 1);
 
         Map<String, LppShardPlannedAllocation> result = allocator.allocate(
-                threeGroups("INGEST"), List.of(index));
+                threeGroups(), List.of(index));
 
         result.values().forEach(a ->
-                assertThat(a.getAssignedGroupIds()).hasSize(1));
+                assertThat(a.getIngestGroupIds()).hasSize(1));
     }
 
     @Test
-    void eachShardAssignedToExactlyNumGroupsGroups_numGroupsTwo() {
-        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 3, 2, "INGEST");
+    void eachShardAssignedToExactlyNumIngestGroups_two() {
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 3, 2);
 
         Map<String, LppShardPlannedAllocation> result = allocator.allocate(
-                threeGroups("INGEST"), List.of(index));
+                threeGroups(), List.of(index));
 
         result.values().forEach(a ->
-                assertThat(a.getAssignedGroupIds()).hasSize(2));
+                assertThat(a.getIngestGroupIds()).hasSize(2));
     }
 
     @Test
     void usesAllGroupsWhenNumGroupsExceedsPoolSize() {
-        // numGroups=5 but only 3 groups available → all 3 used
-        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 1, 5, "INGEST");
+        // numIngestGroups=5 but only 3 groups available → all 3 used
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 1, 5);
 
         Map<String, LppShardPlannedAllocation> result = allocator.allocate(
-                threeGroups("INGEST"), List.of(index));
+                threeGroups(), List.of(index));
 
-        assertThat(result.get("grocery.idx.0").getAssignedGroupIds()).hasSize(3);
+        assertThat(result.get("grocery.idx.1.0").getIngestGroupIds()).hasSize(3);
     }
 
     @Test
     void noGroupAssignedMoreThanOncePerShard() {
-        // numGroups=2, 3 eligible groups — no duplicates within a shard
-        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 6, 2, "INGEST");
+        // numIngestGroups=2, 3 eligible groups — no duplicates within a shard
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 6, 2);
 
         Map<String, LppShardPlannedAllocation> result = allocator.allocate(
-                threeGroups("INGEST"), List.of(index));
+                threeGroups(), List.of(index));
 
         result.values().forEach(a -> {
-            List<String> ids = a.getAssignedGroupIds();
+            List<String> ids = a.getIngestGroupIds();
             assertThat(ids).doesNotHaveDuplicates();
         });
     }
@@ -95,42 +95,77 @@ class LppShardAllocatorTest {
     // ---- eligibility filters ----
 
     @Test
-    void onlyEligibleGroupsAssigned_drainedExcluded() {
-        Map<String, LppGroup> groups = new LinkedHashMap<>();
-        groups.put("healthy", healthyGroup("healthy", "INGEST", 2));
-        LppGroup drained = healthyGroup("drained", "INGEST", 2);
-        drained.getNodes().forEach(n -> n.setAdminState("DRAIN"));
-        groups.put("drained", drained);
+    void partiallyDrainedGroupStillEligible() {
+        // Group with 1 of 2 nodes DRAIN — should still receive shard assignments.
+        // Ejecting it would cause unnecessary resharding; the remaining node can still serve.
+        LppGroup partial = healthyGroup("partial", 2);
+        partial.getNodes().get(0).setAdminState("DRAIN"); // only 1 of 2 drained
+        Map<String, LppGroup> groups = Map.of("partial", partial);
 
-        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 3, 1, "INGEST");
-
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 2, 1);
         Map<String, LppShardPlannedAllocation> result = allocator.allocate(groups, List.of(index));
 
+        assertThat(result).hasSize(2);
         result.values().forEach(a ->
-                assertThat(a.getAssignedGroupIds()).containsOnly("healthy"));
+                assertThat(a.getIngestGroupIds()).containsOnly("partial"));
     }
 
     @Test
-    void onlyEligibleGroupsAssigned_wrongRoleExcluded() {
-        Map<String, LppGroup> groups = Map.of(
-                "g-ingest", healthyGroup("g-ingest", "INGEST", 2),
-                "g-search", healthyGroup("g-search", "SEARCH", 2));
-        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 3, 1, "INGEST");
+    void fullyDrainedGroupExcluded() {
+        // All nodes DRAIN → group ineligible (decommission complete)
+        LppGroup allDrain = healthyGroup("g-drain", 2);
+        allDrain.getNodes().forEach(n -> n.setAdminState("DRAIN"));
+        LppGroup healthy = healthyGroup("g-healthy", 2);
+        Map<String, LppGroup> groups = new LinkedHashMap<>();
+        groups.put("g-drain", allDrain);
+        groups.put("g-healthy", healthy);
+
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 2, 1);
+        Map<String, LppShardPlannedAllocation> result = allocator.allocate(groups, List.of(index));
+
+        result.values().forEach(a ->
+                assertThat(a.getIngestGroupIds()).containsOnly("g-healthy"));
+    }
+
+    @Test
+    void onlyNonDrainedGroupsAssigned() {
+        Map<String, LppGroup> groups = new LinkedHashMap<>();
+        groups.put("healthy", healthyGroup("healthy", 2));
+        LppGroup drained = healthyGroup("drained", 2);
+        drained.getNodes().forEach(n -> n.setAdminState("DRAIN"));
+        groups.put("drained", drained);
+
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 3, 1);
 
         Map<String, LppShardPlannedAllocation> result = allocator.allocate(groups, List.of(index));
 
         result.values().forEach(a ->
-                assertThat(a.getAssignedGroupIds()).containsOnly("g-ingest"));
+                assertThat(a.getIngestGroupIds()).containsOnly("healthy"));
+    }
+
+    @Test
+    void allGroupsEligibleRegardlessOfRole() {
+        // All groups handle both ingest and search — no role-based exclusion
+        Map<String, LppGroup> groups = new LinkedHashMap<>();
+        groups.put("g0", healthyGroup("g0", 2));
+        groups.put("g1", healthyGroup("g1", 2));
+
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 1, 2);
+
+        Map<String, LppShardPlannedAllocation> result = allocator.allocate(groups, List.of(index));
+
+        // Both groups should be assigned — no role filter removes either
+        assertThat(result.get("grocery.idx.1.0").getIngestGroupIds()).hasSize(2);
     }
 
     @Test
     void returnsEmptyWhenNoEligibleGroups() {
-        LppGroup drained = healthyGroup("g1", "INGEST", 2);
+        LppGroup drained = healthyGroup("g1", 2);
         drained.getNodes().forEach(n -> n.setAdminState("DRAIN"));
 
         Map<String, LppShardPlannedAllocation> result = allocator.allocate(
                 Map.of("g1", drained),
-                List.of(new LppIndexDefinition("grocery", "idx", "idx.1", 2, 1, "INGEST")));
+                List.of(new LppIndexDefinition("grocery", "idx", "idx.1", 2, 1)));
 
         assertThat(result).isEmpty();
     }
@@ -139,35 +174,35 @@ class LppShardAllocatorTest {
 
     @Test
     void keepsStableAllocationWithoutRewriting() {
-        LppGroup group = healthyGroup("g1", "INGEST", 2);
-        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 1, 1, "INGEST");
+        LppGroup group = healthyGroup("g1", 2);
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 1, 1);
 
         LppShardEntry entry = new LppShardEntry("grocery", "idx", "idx.1", 0);
         LppShardPlannedAllocation existing = new LppShardPlannedAllocation(entry);
         existing.addGroup(group);
 
-        when(metadataStore.getShardPlannedAllocation("grocery.idx.0"))
+        when(metadataStore.getShardPlannedAllocation("grocery.idx.1.0"))
                 .thenReturn(Optional.of(existing));
 
         Map<String, LppShardPlannedAllocation> result = allocator.allocate(
                 Map.of("g1", group), List.of(index));
 
         verify(metadataStore, never()).putShardPlannedAllocation(any());
-        assertThat(result).containsKey("grocery.idx.0");
+        assertThat(result).containsKey("grocery.idx.1.0");
     }
 
     @Test
     void rewritesAllocationWhenGroupSetChanges() {
-        LppGroup g1 = healthyGroup("g1", "INGEST", 2);
-        LppGroup g2 = healthyGroup("g2", "INGEST", 2);
-        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 1, 2, "INGEST");
+        LppGroup g1 = healthyGroup("g1", 2);
+        LppGroup g2 = healthyGroup("g2", 2);
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 1, 2);
 
         // Existing only has g1, but now 2 groups desired
         LppShardEntry entry = new LppShardEntry("grocery", "idx", "idx.1", 0);
         LppShardPlannedAllocation existing = new LppShardPlannedAllocation(entry);
         existing.addGroup(g1);
 
-        when(metadataStore.getShardPlannedAllocation("grocery.idx.0"))
+        when(metadataStore.getShardPlannedAllocation("grocery.idx.1.0"))
                 .thenReturn(Optional.of(existing));
 
         allocator.allocate(Map.of("g1", g1, "g2", g2), List.of(index));
@@ -180,13 +215,13 @@ class LppShardAllocatorTest {
     @Test
     void allNodesFromAssignedGroupsPopulatedInAllocation() {
         // Group with 3 replicas → all 3 node names in the allocation
-        LppGroup group = healthyGroup("g1", "INGEST", 3);
-        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 1, 1, "INGEST");
+        LppGroup group = healthyGroup("g1", 3);
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 1, 1);
 
         Map<String, LppShardPlannedAllocation> result = allocator.allocate(
                 Map.of("g1", group), List.of(index));
 
-        assertThat(result.get("grocery.idx.0").getAssignedNodeNames()).hasSize(3);
+        assertThat(result.get("grocery.idx.1.0").getAssignedNodeNames()).hasSize(3);
     }
 
     // ---- custom strategy injection ----
@@ -200,32 +235,32 @@ class LppShardAllocatorTest {
         allocator = new LppShardAllocator(metadataStore, firstGroupStrategy);
 
         Map<String, LppGroup> groups = new LinkedHashMap<>();
-        groups.put("g0", healthyGroup("g0", "INGEST", 2));
-        groups.put("g1", healthyGroup("g1", "INGEST", 2));
+        groups.put("g0", healthyGroup("g0", 2));
+        groups.put("g1", healthyGroup("g1", 2));
 
-        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 3, 1, "INGEST");
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 3, 1);
 
         Map<String, LppShardPlannedAllocation> result = allocator.allocate(groups, List.of(index));
 
         // Every shard should go to g0 (always first in insertion-order LinkedHashMap)
         result.values().forEach(a ->
-                assertThat(a.getAssignedGroupIds()).containsExactly("g0"));
+                assertThat(a.getIngestGroupIds()).containsExactly("g0"));
     }
 
     // -------------------------------------------------------------------------
 
-    private Map<String, LppGroup> threeGroups(String role) {
+    private Map<String, LppGroup> threeGroups() {
         Map<String, LppGroup> groups = new LinkedHashMap<>();
-        groups.put("g0", healthyGroup("g0", role, 2));
-        groups.put("g1", healthyGroup("g1", role, 2));
-        groups.put("g2", healthyGroup("g2", role, 2));
+        groups.put("g0", healthyGroup("g0", 2));
+        groups.put("g1", healthyGroup("g1", 2));
+        groups.put("g2", healthyGroup("g2", 2));
         return groups;
     }
 
-    private LppGroup healthyGroup(String groupId, String role, int numNodes) {
-        LppGroup group = new LppGroup(groupId, "zone-a", role);
+    private LppGroup healthyGroup(String groupId, int numNodes) {
+        LppGroup group = new LppGroup(groupId, "zone-a", "INGEST");
         for (int i = 0; i < numNodes; i++) {
-            LppNode node = new LppNode("node-" + groupId + "-" + i, "odin-instance", groupId, role, "zone-a");
+            LppNode node = new LppNode("node-" + groupId + "-" + i, "odin-instance", groupId, "INGEST", "zone-a");
             node.setHealthState("GREEN");
             group.addNode(node);
         }

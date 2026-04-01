@@ -29,6 +29,7 @@ class LppGoalStateOrchestratorTest {
     void setUp() {
         orchestrator = new LppGoalStateOrchestrator(metadataStore, false);
         when(metadataStore.getNodeGoalState(any())).thenReturn(Optional.empty());
+        when(metadataStore.getNodeActualState(any())).thenReturn(Optional.empty());
     }
 
     // ---- basic push ----
@@ -49,6 +50,14 @@ class LppGoalStateOrchestratorTest {
         LppNodeGoalState existing = new LppNodeGoalState("node-1", "INGEST", "local");
         existing.addShard(new LppShardEntry("grocery", "local_index", "local_index.1", 0));
         when(metadataStore.getNodeGoalState("node-1")).thenReturn(Optional.of(existing));
+
+        // Actual state: the shard is ACTIVE — node is fully converged
+        LppNodeActualState actual = new LppNodeActualState("node-1", "odin-inst", "sg0", "INGEST", "zone-a");
+        LppShardActualState shardActual = new LppShardActualState();
+        shardActual.setShardKey("grocery.local_index.1.0");
+        shardActual.setState("ACTIVE");
+        actual.setShardStates(List.of(shardActual));
+        when(metadataStore.getNodeActualState("node-1")).thenReturn(Optional.of(actual));
 
         Map<String, LppShardPlannedAllocation> allocations = singleShardAllocations("node-1", "g1");
         Map<String, LppGroup> groups = groupsWithNodes("g1", List.of("node-1"));

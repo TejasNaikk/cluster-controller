@@ -13,3 +13,18 @@ lpp:
 
   # How often to run the four-task control loop (seconds)
   intervalSeconds: ${LPP_INTERVAL_SECONDS:30}
+
+  # Grail service discovery via Cerberus YQL proxy
+  # Start proxy: cerberus -s grail-deployment-storage-staging --no-status-page
+  # Then set enabled=true; baseUrl defaults to the Cerberus local port
+  grail:
+    enabled: ${LPP_GRAIL_ENABLED:false}
+    baseUrl: ${LPP_GRAIL_BASE_URL:http://localhost:5436}
+    connectTimeoutMs: ${LPP_GRAIL_CONNECT_TIMEOUT_MS:3000}
+    readTimeoutMs: ${LPP_GRAIL_READ_TIMEOUT_MS:10000}
+
+  # Shadow mode: simulate node actual-state reporting so the convergence check works
+  # without real LP nodes. Set simulateNodeReporting=true for staging bring-up.
+  shadow:
+    simulateNodeReporting: ${LPP_SHADOW_SIMULATE:false}
+    simulatedActivationDelayMs: ${LPP_SHADOW_DELAY_MS:0}

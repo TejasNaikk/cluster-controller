@@ -1,10 +1,13 @@
 package io.clustercontroller.lpp.config;
 
+import io.clustercontroller.election.LeaderElection;
 import io.clustercontroller.lpp.allocation.LppShardAllocator;
 import io.clustercontroller.lpp.discovery.GrailClient;
+import io.clustercontroller.lpp.discovery.GrailHttpClient;
 import io.clustercontroller.lpp.discovery.InMemoryGrailClient;
 import io.clustercontroller.lpp.discovery.LppDiscovery;
 import io.clustercontroller.lpp.orchestration.LppGoalStateOrchestrator;
+import io.clustercontroller.lpp.orchestration.LppShadowNodeSimulator;
 import io.clustercontroller.lpp.orchestration.LppStateAggregator;
 import io.clustercontroller.lpp.store.LppEtcdPathResolver;
 import io.clustercontroller.lpp.store.LppMetadataStore;
@@ -55,13 +58,43 @@ public class LppControllerConfig {
         return new LppMetadataStore(lppEtcdClient, lppEtcdPathResolver);
     }
 
+    @Value("${lpp.grail.enabled:false}")
+    private boolean grailEnabled;
+
+    @Value("${lpp.grail.baseUrl:http://localhost:5436}")
+    private String grailBaseUrl;
+
+    @Value("${lpp.grail.connectTimeoutMs:3000}")
+    private int grailConnectTimeoutMs;
+
+    @Value("${lpp.grail.readTimeoutMs:10000}")
+    private int grailReadTimeoutMs;
+
+    @Value("${lpp.shadow.simulateNodeReporting:false}")
+    private boolean shadowSimulateNodeReporting;
+
+    @Value("${lpp.shadow.simulatedActivationDelayMs:0}")
+    private long shadowActivationDelayMs;
+
     /**
-     * GrailClient — swap for a real Grail HTTP client when available.
-     * InMemoryGrailClient is suitable for local dev and unit tests.
+     * GrailClient — uses real HTTP client when {@code lpp.grail.enabled=true},
+     * otherwise falls back to InMemoryGrailClient (for local dev / unit tests).
+     *
+     * <p>To enable for staging, set in application-lpp.yml:
+     * <pre>
+     * lpp:
+     *   grail:
+     *     enabled: true
+     *     baseUrl: http://grail.phx2.uberinternal.com
+     * </pre>
      */
     @Bean
     public GrailClient grailClient() {
-        log.info("LPP: using InMemoryGrailClient (replace with real Grail client for prod)");
+        if (grailEnabled) {
+            log.info("LPP: using GrailHttpClient → {} (region={})", grailBaseUrl, region);
+            return new GrailHttpClient(grailBaseUrl, region, grailConnectTimeoutMs, grailReadTimeoutMs);
+        }
+        log.info("LPP: using InMemoryGrailClient (set lpp.grail.enabled=true for real Grail)");
         return new InMemoryGrailClient();
     }
 
@@ -84,6 +117,33 @@ public class LppControllerConfig {
     @Bean
     public LppStateAggregator lppStateAggregator(LppMetadataStore lppMetadataStore) {
         return new LppStateAggregator(lppMetadataStore);
+    }
+
+    /**
+     * Leader election for LPP controller. Uses the same etcd client as metadata store.
+     * The election key is shared across all LPP controller instances — only one will be leader.
+     */
+    @Bean
+    public LeaderElection lppLeaderElection(Client lppEtcdClient) {
+        String nodeId = "lpp-controller-" + namespace + "-" + java.util.UUID.randomUUID();
+        log.info("LPP: leader election node ID = {}", nodeId);
+        LeaderElection election = new LeaderElection(lppEtcdClient, nodeId);
+        election.startElection();
+        return election;
+    }
+
+    /**
+     * Shadow node simulator — activated by {@code lpp.shadow.simulateNodeReporting=true}.
+     * Returns null (no bean) when shadow mode is off.
+     */
+    @Bean
+    public LppShadowNodeSimulator lppShadowNodeSimulator(LppMetadataStore lppMetadataStore) {
+        if (shadowSimulateNodeReporting) {
+            log.info("LPP: shadow simulator ENABLED (activationDelayMs={})", shadowActivationDelayMs);
+            return new LppShadowNodeSimulator(lppMetadataStore, shadowActivationDelayMs);
+        }
+        log.info("LPP: shadow simulator disabled (set lpp.shadow.simulateNodeReporting=true to enable)");
+        return null;
     }
 
     @Bean

@@ -7,15 +7,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LppShardEntryTest {
 
     @Test
-    void keyFormat() {
+    void keyUsesFullIndexNameNotIndexName() {
+        // Key must discriminate between versions: local_index.1 shard 0 ≠ local_index.2 shard 0
         LppShardEntry entry = new LppShardEntry("grocery", "local_index", "local_index.1", 0);
-        assertThat(entry.getKey()).isEqualTo("grocery.local_index.0");
+        assertThat(entry.getKey()).isEqualTo("grocery.local_index.1.0");
     }
 
     @Test
-    void keyIncludesShardId() {
-        LppShardEntry shard2 = new LppShardEntry("grocery", "local_index", "local_index.1", 2);
-        assertThat(shard2.getKey()).isEqualTo("grocery.local_index.2");
+    void keyForDifferentVersionIsDistinct() {
+        LppShardEntry v1 = new LppShardEntry("grocery", "local_index", "local_index.1", 3);
+        LppShardEntry v2 = new LppShardEntry("grocery", "local_index", "local_index.2", 3);
+        assertThat(v1.getKey()).isEqualTo("grocery.local_index.1.3");
+        assertThat(v2.getKey()).isEqualTo("grocery.local_index.2.3");
+        assertThat(v1.getKey()).isNotEqualTo(v2.getKey());
     }
 
     @Test
@@ -51,6 +55,49 @@ class LppGroupTest {
         group.addNode(node);
         assertThat(group.isHealthy()).isFalse();
     }
+
+    @Test
+    void isHealthyReturnsFalseWhenOneNodeDrained() {
+        // isHealthy = strict: ALL nodes must be healthy + non-drained
+        LppGroup group = new LppGroup("g1", "zone-a", "INGEST");
+        LppNode healthy = new LppNode("n1", "g1", "shard-0", "INGEST", "zone-a");
+        healthy.setHealthState("GREEN");
+        LppNode drained = new LppNode("n2", "g1", "shard-0", "INGEST", "zone-a");
+        drained.setHealthState("GREEN");
+        drained.setAdminState("DRAIN");
+        group.addNode(healthy);
+        group.addNode(drained);
+        assertThat(group.isHealthy()).isFalse();
+    }
+
+    @Test
+    void hasEligibleNodesTrueWhenAtLeastOneNonDrained() {
+        // hasEligibleNodes = softer: at least 1 non-drained node
+        LppGroup group = new LppGroup("g1", "zone-a", "INGEST");
+        LppNode healthy = new LppNode("n1", "g1", "shard-0", "INGEST", "zone-a");
+        healthy.setHealthState("GREEN");
+        LppNode drained = new LppNode("n2", "g1", "shard-0", "INGEST", "zone-a");
+        drained.setHealthState("GREEN");
+        drained.setAdminState("DRAIN");
+        group.addNode(healthy);
+        group.addNode(drained);
+        // isHealthy=false (strict), hasEligibleNodes=true (soft — 1 node is not DRAIN)
+        assertThat(group.isHealthy()).isFalse();
+        assertThat(group.hasEligibleNodes()).isTrue();
+    }
+
+    @Test
+    void hasEligibleNodesFalseWhenAllDrained() {
+        LppGroup group = new LppGroup("g1", "zone-a", "INGEST");
+        for (int i = 0; i < 3; i++) {
+            LppNode n = new LppNode("n" + i, "g1", "shard-0", "INGEST", "zone-a");
+            n.setHealthState("GREEN");
+            n.setAdminState("DRAIN");
+            group.addNode(n);
+        }
+        assertThat(group.hasEligibleNodes()).isFalse();
+    }
+
 
     @Test
     void isFullAtDefaultReplicaCount() {

@@ -1,11 +1,15 @@
 package io.clustercontroller.lpp;
 
+import io.clustercontroller.election.LeaderElection;
+import io.clustercontroller.lpp.orchestration.LppShadowNodeSimulator;
 import io.clustercontroller.lpp.tasks.*;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.Executors;
@@ -15,11 +19,14 @@ import java.util.concurrent.TimeUnit;
 /**
  * LPP controller main loop. Activated by the {@code lpp} Spring profile.
  *
- * <p>Each iteration runs the four LPP tasks in priority order:
+ * <p>Each iteration:
  * <ol>
+ *   <li>Checks leader election — non-leaders skip the loop entirely.</li>
  *   <li>Discovery   — pull topology from Grail, prune stale nodes</li>
- *   <li>Allocation  — bin-pack shards onto groups</li>
- *   <li>Orchestration — push goal state to one divergent node (rolling update)</li>
+ *   <li>Allocation  — bin-pack shards onto groups (two-pass: ingest then search)</li>
+ *   <li>Orchestration — push goal state to divergent nodes (20% rollout per group)</li>
+ *   <li>Shadow simulation — if enabled, write fake ACTIVE actual states so the
+ *       convergence check can gate the next orchestration batch</li>
  *   <li>State aggregation — count active/stuck/failed shards</li>
  * </ol>
  */
@@ -29,14 +36,22 @@ import java.util.concurrent.TimeUnit;
 public class LppControllerRunner {
 
     private final LppTaskContext ctx;
+    private final LeaderElection leaderElection;
     private final long intervalSeconds;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
             r -> new Thread(r, "lpp-controller-loop"));
 
+    @Nullable
+    private final LppShadowNodeSimulator shadowSimulator;
+
     public LppControllerRunner(
             LppTaskContext ctx,
+            LeaderElection leaderElection,
+            @Nullable @Autowired(required = false) LppShadowNodeSimulator shadowSimulator,
             @Value("${lpp.intervalSeconds:30}") long intervalSeconds) {
         this.ctx = ctx;
+        this.leaderElection = leaderElection;
+        this.shadowSimulator = shadowSimulator;
         this.intervalSeconds = intervalSeconds;
     }
 
@@ -50,12 +65,18 @@ public class LppControllerRunner {
     @PreDestroy
     public void stop() {
         log.info("LPP controller stopping");
+        leaderElection.shutdown();
         scheduler.shutdown();
     }
 
     private void runLoop() {
         try {
-            log.info("LPP loop start");
+            if (!leaderElection.isLeader()) {
+                log.debug("LPP: not leader, skipping loop");
+                return;
+            }
+
+            log.info("LPP loop start [leader]");
 
             String discovery = new LppDiscoveryTask(ctx).execute();
             log.info("LPP discovery → {}", discovery);
@@ -65,6 +86,12 @@ public class LppControllerRunner {
 
             String orchestration = new LppOrchestrationTask(ctx).execute();
             log.info("LPP orchestration → {}", orchestration);
+
+            // Shadow mode: fake ACTIVE actual states so convergence check passes next tick
+            if (shadowSimulator != null) {
+                log.debug("LPP shadow: simulating node actual-state reporting");
+                shadowSimulator.simulate();
+            }
 
             String aggregation = new LppStateAggregationTask(ctx).execute();
             log.info("LPP state-aggregation → {}", aggregation);
