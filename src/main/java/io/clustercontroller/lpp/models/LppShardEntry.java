@@ -1,5 +1,6 @@
 package io.clustercontroller.lpp.models;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -47,6 +48,7 @@ public class LppShardEntry {
     }
 
     /** Canonical key: collection.fullIndexName.shardId — e.g. "grocery.local_index.1.3" */
+    @JsonIgnore
     public String getKey() {
         return collection + "." + fullIndexName + "." + shardId;
     }
