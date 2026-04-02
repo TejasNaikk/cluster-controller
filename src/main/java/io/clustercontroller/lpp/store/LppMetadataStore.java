@@ -1,5 +1,6 @@
 package io.clustercontroller.lpp.store;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.clustercontroller.lpp.models.*;
 import io.etcd.jetcd.ByteSequence;
@@ -23,7 +24,8 @@ import java.util.concurrent.TimeUnit;
 public class LppMetadataStore {
 
     private static final long TIMEOUT_SECONDS = 5;
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
     private final Client etcdClient;
     private final LppEtcdPathResolver pathResolver;

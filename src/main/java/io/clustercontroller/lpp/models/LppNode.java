@@ -1,5 +1,6 @@
 package io.clustercontroller.lpp.models;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -90,6 +91,7 @@ public class LppNode {
     }
 
     /** Key format used to look up this node in etcd and in maps. */
+    @JsonIgnore
     public String getKey() {
         return nodeName;
     }

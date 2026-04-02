@@ -1,5 +1,6 @@
 package io.clustercontroller.lpp.models;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -84,6 +85,7 @@ public class LppIndexDefinition {
     }
 
     /** etcd key: collection.fullIndexName — e.g. "grocery.local_index.1" */
+    @JsonIgnore
     public String getKey() {
         return collection + "." + fullIndexName;
     }

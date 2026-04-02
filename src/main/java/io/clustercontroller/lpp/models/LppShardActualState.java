@@ -1,5 +1,6 @@
 package io.clustercontroller.lpp.models;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -37,14 +38,17 @@ public class LppShardActualState {
     @JsonProperty("last_state_change_ms")
     private long lastStateChangeMs;
 
+    @JsonIgnore
     public boolean isActive() {
         return "ACTIVE".equals(state);
     }
 
+    @JsonIgnore
     public boolean isFailed() {
         return "FAILED".equals(state);
     }
 
+    @JsonIgnore
     public boolean isStuck(long stuckThresholdMs) {
         if (isActive() || "REMOVED".equals(state)) {
             return false;

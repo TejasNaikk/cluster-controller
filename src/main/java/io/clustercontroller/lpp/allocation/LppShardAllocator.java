@@ -95,6 +95,19 @@ public class LppShardAllocator {
                         shardId);
                 String shardKey = entry.getKey();
 
+                // Stable allocation check — if an existing allocation is in etcd, reuse it.
+                // This must happen BEFORE running the strategy so that random strategies
+                // don't produce a new assignment on every tick, destroying convergence.
+                Optional<LppShardPlannedAllocation> existing =
+                        metadataStore.getShardPlannedAllocation(shardKey);
+                if (existing.isPresent()) {
+                    log.debug("LPP planner: shard {} stable (etcd) — ingest:{} search:{}", shardKey,
+                            existing.get().getIngestGroupIds(), existing.get().getSearchGroupIds());
+                    result.put(shardKey, existing.get());
+                    continue;
+                }
+
+                // No existing allocation — run the strategy to pick initial placement.
                 // --- Ingest pass ---
                 List<LppGroup> ingestGroups =
                         strategy.selectGroups(eligibleIngest, index.getNumIngestGroups(), ingestCounts);
@@ -106,17 +119,6 @@ public class LppShardAllocator {
 
                 if (ingestGroups.isEmpty()) {
                     log.warn("LPP planner: strategy returned no groups for shard {}, skipping", shardKey);
-                    continue;
-                }
-
-                // Stable allocation check — skip etcd write if group assignment unchanged
-                Optional<LppShardPlannedAllocation> existing =
-                        metadataStore.getShardPlannedAllocation(shardKey);
-                if (existing.isPresent()
-                        && isAllocationStable(existing.get(), ingestGroups, searchGroups)) {
-                    log.debug("LPP planner: shard {} stable — ingest:{} search:{}", shardKey,
-                            existing.get().getIngestGroupIds(), existing.get().getSearchGroupIds());
-                    result.put(shardKey, existing.get());
                     continue;
                 }
 
