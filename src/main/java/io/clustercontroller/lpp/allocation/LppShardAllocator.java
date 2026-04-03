@@ -10,28 +10,22 @@ import java.util.stream.Collectors;
 /**
  * Bin-packing planner for LPP shards.
  *
- * <p>For each registered index the planner does two passes:
- * <ol>
- *   <li><b>Ingest pass</b>: picks {@code numIngestGroups} groups from the pool of eligible
- *       INGEST groups per shard. These groups receive segment data from the pipeline.</li>
- *   <li><b>Search pass</b>: picks {@code numSearchGroups} groups from the pool of eligible
- *       SEARCH groups per shard. These groups serve read/query traffic.</li>
- * </ol>
+ * <h3>Hybrid mode (default)</h3>
+ * <p>When all groups serve both ingest and search (the current default), a single allocation
+ * pass runs per shard. The scale factor ({@code numIngestGroups}) controls how many groups
+ * are assigned per shard. Each selected group is registered as both ingest and search, so
+ * {@code ingestGroupIds == searchGroupIds} always.
  *
- * <p>Today all groups handle both ingest and search ({@link LppGroup.GroupType} defaults to
- * {@code {INGEST, SEARCH}}), so the two passes select from the same pool and typically
- * produce the same assignment. The split is the infrastructure hook for introducing
- * dedicated ingest-only or search-only groups in the future.
- *
- * <p>The strategy is called separately for each pass. Load is tracked across all shards
- * and indices in a single allocation run so different shards land on different groups.
- *
- * <p><b>Example</b> — 3 groups, 6 shards, numIngestGroups=1, numSearchGroups=1:
+ * <p><b>Example</b> — 32 groups, 4 shards, scale=1:
  * <pre>
- *   shard 0 → ingest:[g0] search:[g0]   shard 3 → ingest:[g0] search:[g0]
- *   shard 1 → ingest:[g1] search:[g1]   shard 4 → ingest:[g1] search:[g1]
- *   shard 2 → ingest:[g2] search:[g2]   shard 5 → ingest:[g2] search:[g2]
+ *   shard 0 → [g0]   shard 1 → [g1]   shard 2 → [g2]   shard 3 → [g3]
  * </pre>
+ * Each group's nodes (all replicas) serve that shard for both ingest and search.
+ *
+ * <h3>Reader-writer separation (future)</h3>
+ * <p>When dedicated ingest-only or search-only groups are introduced, the eligible pools
+ * will differ and two independent passes run: ingest pass picks {@code numIngestGroups}
+ * from the ingest pool; search pass picks {@code numSearchGroups} from the search pool.
  *
  * <p>Strategy is pluggable via {@link AllocationStrategy}. The default is
  * {@link RandomAllocationStrategy}.
@@ -41,23 +35,44 @@ public class LppShardAllocator {
 
     private final LppMetadataStore metadataStore;
     private final AllocationStrategy strategy;
+    private final boolean hybrid;
 
-    /** Default constructor uses random allocation strategy. */
+    /** Default constructor: hybrid mode, random allocation strategy. */
     public LppShardAllocator(LppMetadataStore metadataStore) {
-        this(metadataStore, new RandomAllocationStrategy());
+        this(metadataStore, new RandomAllocationStrategy(), true);
     }
 
     /** Constructor for injecting a custom allocation strategy. */
     public LppShardAllocator(LppMetadataStore metadataStore, AllocationStrategy strategy) {
+        this(metadataStore, strategy, true);
+    }
+
+    /** Full constructor — hybrid=true for hybrid mode, false for reader-writer separation. */
+    public LppShardAllocator(LppMetadataStore metadataStore, AllocationStrategy strategy, boolean hybrid) {
         this.metadataStore = metadataStore;
         this.strategy = strategy;
+        this.hybrid = hybrid;
     }
 
     /**
      * Run a full allocation pass over all registered indices given the current group topology.
      *
-     * <p>Load counters are shared across all indices so the strategy can bin-pack across
-     * the entire shard set in one run.
+     * <h3>Hybrid mode (default)</h3>
+     * <p>When all eligible groups can serve both ingest and search (the current default),
+     * a single allocation pass is run per shard. The number of groups selected equals
+     * {@code numIngestGroups} (the scale factor). Each selected group is registered as
+     * both ingest and search via {@link LppShardPlannedAllocation#addGroup}, so
+     * {@code ingestGroupIds == searchGroupIds} always. This ensures scale=1 means exactly
+     * 1 group per shard, scale=2 means exactly 2 groups, etc.
+     *
+     * <h3>Reader-writer separation mode</h3>
+     * <p>When dedicated ingest-only or search-only groups exist (the eligible pools differ),
+     * two independent passes run: one to pick {@code numIngestGroups} from the ingest pool
+     * and one to pick {@code numSearchGroups} from the search pool. Groups and nodes are
+     * unioned into {@code assignedGroupIds} / {@code assignedNodeNames} for orchestration.
+     *
+     * <p>Load counters are shared across all indices in a single run so the strategy
+     * can bin-pack across the entire shard set at once.
      *
      * @param groups   current group topology from discovery (groupId → LppGroup)
      * @param indices  index definitions from etcd
@@ -69,21 +84,26 @@ public class LppShardAllocator {
 
         Map<String, LppShardPlannedAllocation> result = new LinkedHashMap<>();
 
-        // Separate eligible pools for ingest and search (same today; different when dedicated groups exist)
         List<LppGroup> eligibleIngest = selectEligibleGroups(groups, LppGroup.GroupType.INGEST);
         List<LppGroup> eligibleSearch = selectEligibleGroups(groups, LppGroup.GroupType.SEARCH);
 
-        // Per-group shard load counters — shared across all indices in this pass
+        log.info("LPP planner: mode={}, ingest-pool={} groups, search-pool={} groups",
+                hybrid ? "HYBRID" : "READER-WRITER", eligibleIngest.size(), eligibleSearch.size());
+
+        // Shared load counter across all indices so bin-packing works globally.
+        // In hybrid mode one counter suffices; in reader-writer mode keep separate ones.
         Map<String, Integer> ingestCounts = new HashMap<>();
         Map<String, Integer> searchCounts = new HashMap<>();
 
         for (LppIndexDefinition index : indices) {
-            log.info("LPP planner: index {} — {} shards, {} ingest groups / {} search groups per shard",
-                    index.getKey(), index.getNumShards(),
-                    index.getNumIngestGroups(), index.getNumSearchGroups());
+            int scale = index.getNumIngestGroups(); // scale = groups per shard
+            log.info("LPP planner: index {} — {} shards, scale={} ({}) groups/shard",
+                    index.getKey(), index.getNumShards(), scale,
+                    hybrid ? "hybrid" : String.format("ingest=%d search=%d",
+                            index.getNumIngestGroups(), index.getNumSearchGroups()));
 
             if (eligibleIngest.isEmpty()) {
-                log.warn("LPP planner: no eligible ingest groups for index {}, skipping", index.getKey());
+                log.warn("LPP planner: no eligible groups for index {}, skipping", index.getKey());
                 continue;
             }
 
@@ -95,50 +115,54 @@ public class LppShardAllocator {
                         shardId);
                 String shardKey = entry.getKey();
 
-                // Stable allocation check — if an existing allocation is in etcd, reuse it.
-                // This must happen BEFORE running the strategy so that random strategies
-                // don't produce a new assignment on every tick, destroying convergence.
+                // Stable allocation check — reuse existing etcd allocation before running the
+                // strategy. This is critical: without this, random strategies produce a new
+                // assignment every tick, making convergence impossible.
                 Optional<LppShardPlannedAllocation> existing =
                         metadataStore.getShardPlannedAllocation(shardKey);
                 if (existing.isPresent()) {
-                    log.debug("LPP planner: shard {} stable (etcd) — ingest:{} search:{}", shardKey,
-                            existing.get().getIngestGroupIds(), existing.get().getSearchGroupIds());
+                    log.debug("LPP planner: shard {} stable (etcd)", shardKey);
                     result.put(shardKey, existing.get());
                     continue;
                 }
 
                 // No existing allocation — run the strategy to pick initial placement.
-                // --- Ingest pass ---
-                List<LppGroup> ingestGroups =
-                        strategy.selectGroups(eligibleIngest, index.getNumIngestGroups(), ingestCounts);
-
-                // --- Search pass ---
-                List<LppGroup> searchGroups = eligibleSearch.isEmpty()
-                        ? ingestGroups  // fall back to ingest groups when no search-specific pool
-                        : strategy.selectGroups(eligibleSearch, index.getNumSearchGroups(), searchCounts);
-
-                if (ingestGroups.isEmpty()) {
-                    log.warn("LPP planner: strategy returned no groups for shard {}, skipping", shardKey);
-                    continue;
-                }
-
                 LppShardPlannedAllocation allocation = new LppShardPlannedAllocation(entry);
-                for (LppGroup g : ingestGroups) {
-                    allocation.addIngestGroup(g);
-                }
-                for (LppGroup g : searchGroups) {
-                    allocation.addSearchGroup(g);
-                }
-                allocation.setLastUpdatedMs(System.currentTimeMillis());
 
+                if (hybrid) {
+                    // Single pass: scale groups handle both ingest and search.
+                    List<LppGroup> selected =
+                            strategy.selectGroups(eligibleIngest, scale, ingestCounts);
+                    if (selected.isEmpty()) {
+                        log.warn("LPP planner: strategy returned no groups for shard {}, skipping", shardKey);
+                        continue;
+                    }
+                    for (LppGroup g : selected) {
+                        allocation.addGroup(g); // registers in both ingestGroupIds and searchGroupIds
+                    }
+                    log.info("LPP planner: shard {} → hybrid groups:{} scale={} (nodes:{})",
+                            shardKey, allocation.getIngestGroupIds(), selected.size(),
+                            allocation.getAssignedNodeNames());
+                } else {
+                    // Two passes: dedicated ingest and search pools.
+                    List<LppGroup> ingestGroups =
+                            strategy.selectGroups(eligibleIngest, index.getNumIngestGroups(), ingestCounts);
+                    List<LppGroup> searchGroups =
+                            strategy.selectGroups(eligibleSearch, index.getNumSearchGroups(), searchCounts);
+                    if (ingestGroups.isEmpty()) {
+                        log.warn("LPP planner: no ingest groups for shard {}, skipping", shardKey);
+                        continue;
+                    }
+                    for (LppGroup g : ingestGroups) allocation.addIngestGroup(g);
+                    for (LppGroup g : searchGroups) allocation.addSearchGroup(g);
+                    log.info("LPP planner: shard {} → ingest:{} search:{} (nodes:{})",
+                            shardKey, allocation.getIngestGroupIds(), allocation.getSearchGroupIds(),
+                            allocation.getAssignedNodeNames());
+                }
+
+                allocation.setLastUpdatedMs(System.currentTimeMillis());
                 metadataStore.putShardPlannedAllocation(allocation);
                 result.put(shardKey, allocation);
-
-                log.info("LPP planner: shard {} → ingest:{} search:{} (nodes:{})",
-                        shardKey,
-                        allocation.getIngestGroupIds(),
-                        allocation.getSearchGroupIds(),
-                        allocation.getAssignedNodeNames());
             }
         }
 
@@ -158,23 +182,5 @@ public class LppShardAllocator {
                 .filter(LppGroup::hasEligibleNodes)
                 .filter(g -> g.canServe(type))
                 .collect(Collectors.toList());
-    }
-
-    /**
-     * An allocation is stable when both the ingest and search group ID sets match exactly.
-     * Any difference triggers a rewrite (and potentially a handoff for safe migration).
-     */
-    private boolean isAllocationStable(LppShardPlannedAllocation existing,
-                                       List<LppGroup> ingestGroups,
-                                       List<LppGroup> searchGroups) {
-        Set<String> desiredIngest = groupIds(ingestGroups);
-        Set<String> desiredSearch = groupIds(searchGroups);
-        Set<String> existingIngest = new HashSet<>(existing.getIngestGroupIds());
-        Set<String> existingSearch = new HashSet<>(existing.getSearchGroupIds());
-        return desiredIngest.equals(existingIngest) && desiredSearch.equals(existingSearch);
-    }
-
-    private Set<String> groupIds(List<LppGroup> groups) {
-        return groups.stream().map(LppGroup::getGroupId).collect(Collectors.toSet());
     }
 }

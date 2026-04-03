@@ -2,6 +2,7 @@ package io.clustercontroller.lpp.config;
 
 import io.clustercontroller.election.LeaderElection;
 import io.clustercontroller.lpp.allocation.LppShardAllocator;
+import io.clustercontroller.lpp.allocation.RandomAllocationStrategy;
 import io.clustercontroller.lpp.discovery.GrailClient;
 import io.clustercontroller.lpp.discovery.GrailHttpClient;
 import io.clustercontroller.lpp.discovery.InMemoryGrailClient;
@@ -77,6 +78,14 @@ public class LppControllerConfig {
     private long shadowActivationDelayMs;
 
     /**
+     * Allocation mode: HYBRID (default) or READER_WRITER.
+     * HYBRID — all groups serve both ingest and search; one allocation pass per shard.
+     * READER_WRITER — dedicated ingest-only and search-only group pools; two passes per shard.
+     */
+    @Value("${lpp.allocation.mode:HYBRID}")
+    private String allocationMode;
+
+    /**
      * GrailClient — uses real HTTP client when {@code lpp.grail.enabled=true},
      * otherwise falls back to InMemoryGrailClient (for local dev / unit tests).
      *
@@ -105,7 +114,9 @@ public class LppControllerConfig {
 
     @Bean
     public LppShardAllocator lppShardAllocator(LppMetadataStore lppMetadataStore) {
-        return new LppShardAllocator(lppMetadataStore);
+        boolean hybrid = !"READER_WRITER".equalsIgnoreCase(allocationMode);
+        log.info("LPP: allocator mode={} (hybrid={})", allocationMode, hybrid);
+        return new LppShardAllocator(lppMetadataStore, new RandomAllocationStrategy(), hybrid);
     }
 
     @Bean
