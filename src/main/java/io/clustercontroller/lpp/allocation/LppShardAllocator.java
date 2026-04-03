@@ -96,11 +96,12 @@ public class LppShardAllocator {
         Map<String, Integer> searchCounts = new HashMap<>();
 
         for (LppIndexDefinition index : indices) {
-            int scale = index.getNumIngestGroups(); // scale = groups per shard
-            log.info("LPP planner: index {} — {} shards, scale={} ({}) groups/shard",
-                    index.getKey(), index.getNumShards(), scale,
-                    hybrid ? "hybrid" : String.format("ingest=%d search=%d",
-                            index.getNumIngestGroups(), index.getNumSearchGroups()));
+            log.info("LPP planner: index {} — {} shards, mode={}, scale_per_shard={}",
+                    index.getKey(), index.getNumShards(),
+                    hybrid ? "HYBRID" : "READER-WRITER",
+                    index.getScalePerShard().isEmpty()
+                            ? "uniform(" + index.getNumIngestGroups() + ")"
+                            : index.getScalePerShard());
 
             if (eligibleIngest.isEmpty()) {
                 log.warn("LPP planner: no eligible groups for index {}, skipping", index.getKey());
@@ -108,6 +109,7 @@ public class LppShardAllocator {
             }
 
             for (int shardId = 0; shardId < index.getNumShards(); shardId++) {
+                int scale = index.getShardScale(shardId); // per-shard scale from index conf
                 LppShardEntry entry = new LppShardEntry(
                         index.getCollection(),
                         index.getIndexName(),
