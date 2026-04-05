@@ -4,6 +4,7 @@ import io.clustercontroller.lpp.allocation.LppShardAllocator;
 import io.clustercontroller.lpp.discovery.LppDiscovery;
 import io.clustercontroller.lpp.models.*;
 import io.clustercontroller.lpp.orchestration.LppGoalStateOrchestrator;
+import io.clustercontroller.lpp.orchestration.LppRoutingTableOrchestrator;
 import io.clustercontroller.lpp.orchestration.LppStateAggregator;
 import io.clustercontroller.lpp.store.LppMetadataStore;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +25,7 @@ class LppTasksTest {
     @Mock private LppDiscovery discovery;
     @Mock private LppShardAllocator allocator;
     @Mock private LppGoalStateOrchestrator orchestrator;
+    @Mock private LppRoutingTableOrchestrator routingTableOrchestrator;
     @Mock private LppStateAggregator aggregator;
     @Mock private LppMetadataStore metadataStore;
 
@@ -31,8 +33,8 @@ class LppTasksTest {
 
     @BeforeEach
     void setUp() {
-        ctx = new LppTaskContext(discovery, allocator, orchestrator, aggregator,
-                metadataStore, "delivery-grocery", "local");
+        ctx = new LppTaskContext(discovery, allocator, orchestrator, routingTableOrchestrator,
+                aggregator, metadataStore, "delivery-grocery", "local");
     }
 
     // ---- Discovery task ----
