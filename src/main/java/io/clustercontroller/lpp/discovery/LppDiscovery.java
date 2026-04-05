@@ -84,6 +84,7 @@ public class LppDiscovery {
 
     /**
      * Remove nodes whose heartbeat is older than {@link LppConstants#STALE_NODE_TIMEOUT_MS}.
+     * Also deletes the goal-state for pruned nodes so orphaned goal-states don't accumulate.
      * Returns count of pruned nodes.
      */
     private int pruneStaleNodes(Map<String, LppNodeActualState> states) {
@@ -94,6 +95,7 @@ public class LppDiscovery {
                         state.getNodeName(),
                         System.currentTimeMillis() - state.getHeartbeatTimestampMs());
                 metadataStore.deleteNodeActualState(state.getNodeName());
+                metadataStore.deleteNodeGoalState(state.getNodeName());
                 count++;
             }
         }

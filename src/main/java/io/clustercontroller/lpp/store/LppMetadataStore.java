@@ -67,6 +67,10 @@ public class LppMetadataStore {
         delete(pathResolver.nodeActualStatePath(nodeName));
     }
 
+    public void deleteNodeGoalState(String nodeName) {
+        delete(pathResolver.nodeGoalStatePath(nodeName));
+    }
+
     // -------------------------------------------------------------------------
     // NODE GOAL STATE
     // -------------------------------------------------------------------------
