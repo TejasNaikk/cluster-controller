@@ -139,6 +139,19 @@ public class LppMetadataStore {
     }
 
     // -------------------------------------------------------------------------
+    // ROUTING TABLE
+    // -------------------------------------------------------------------------
+
+    public void putRoutingTable(LppRoutingTable routingTable) {
+        put(pathResolver.routingTablePath(), toJson(routingTable));
+    }
+
+    public Optional<LppRoutingTable> getRoutingTable() {
+        return get(pathResolver.routingTablePath())
+                .map(v -> fromJson(v, LppRoutingTable.class));
+    }
+
+    // -------------------------------------------------------------------------
     // INTERNAL ETCD OPS
     // -------------------------------------------------------------------------
 

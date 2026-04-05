@@ -93,6 +93,10 @@ public class LppControllerRunner {
                 shadowSimulator.simulate();
             }
 
+            // Routing table: computed AFTER shadow sim so simulated ACTIVE states are visible
+            String routing = new LppRoutingTableTask(ctx).execute();
+            log.info("LPP routing-table → {}", routing);
+
             String aggregation = new LppStateAggregationTask(ctx).execute();
             log.info("LPP state-aggregation → {}", aggregation);
 

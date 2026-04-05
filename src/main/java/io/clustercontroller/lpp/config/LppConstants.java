@@ -46,6 +46,7 @@ public final class LppConstants {
     public static final String TASK_DISCOVERY = "lpp-discovery";
     public static final String TASK_ALLOCATION = "lpp-allocation";
     public static final String TASK_ORCHESTRATION = "lpp-orchestration";
+    public static final String TASK_ROUTING_TABLE = "lpp-routing-table";
     public static final String TASK_STATE_AGGREGATION = "lpp-state-aggregation";
 
     // Task priorities (lower number = higher priority)

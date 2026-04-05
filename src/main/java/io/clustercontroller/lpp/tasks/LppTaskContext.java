@@ -6,6 +6,7 @@ import io.clustercontroller.lpp.models.LppGroup;
 import io.clustercontroller.lpp.models.LppIndexDefinition;
 import io.clustercontroller.lpp.models.LppShardPlannedAllocation;
 import io.clustercontroller.lpp.orchestration.LppGoalStateOrchestrator;
+import io.clustercontroller.lpp.orchestration.LppRoutingTableOrchestrator;
 import io.clustercontroller.lpp.orchestration.LppStateAggregator;
 import io.clustercontroller.lpp.store.LppMetadataStore;
 import lombok.Getter;
@@ -27,6 +28,7 @@ public class LppTaskContext {
     private final LppDiscovery discovery;
     private final LppShardAllocator allocator;
     private final LppGoalStateOrchestrator orchestrator;
+    private final LppRoutingTableOrchestrator routingTableOrchestrator;
     private final LppStateAggregator stateAggregator;
     private final LppMetadataStore metadataStore;
     private final String namespace;
@@ -40,6 +42,7 @@ public class LppTaskContext {
             LppDiscovery discovery,
             LppShardAllocator allocator,
             LppGoalStateOrchestrator orchestrator,
+            LppRoutingTableOrchestrator routingTableOrchestrator,
             LppStateAggregator stateAggregator,
             LppMetadataStore metadataStore,
             String namespace,
@@ -47,6 +50,7 @@ public class LppTaskContext {
         this.discovery = discovery;
         this.allocator = allocator;
         this.orchestrator = orchestrator;
+        this.routingTableOrchestrator = routingTableOrchestrator;
         this.stateAggregator = stateAggregator;
         this.metadataStore = metadataStore;
         this.namespace = namespace;

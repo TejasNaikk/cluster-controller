@@ -8,6 +8,7 @@ import io.clustercontroller.lpp.discovery.GrailHttpClient;
 import io.clustercontroller.lpp.discovery.InMemoryGrailClient;
 import io.clustercontroller.lpp.discovery.LppDiscovery;
 import io.clustercontroller.lpp.orchestration.LppGoalStateOrchestrator;
+import io.clustercontroller.lpp.orchestration.LppRoutingTableOrchestrator;
 import io.clustercontroller.lpp.orchestration.LppShadowNodeSimulator;
 import io.clustercontroller.lpp.orchestration.LppStateAggregator;
 import io.clustercontroller.lpp.store.LppEtcdPathResolver;
@@ -126,6 +127,11 @@ public class LppControllerConfig {
     }
 
     @Bean
+    public LppRoutingTableOrchestrator lppRoutingTableOrchestrator(LppMetadataStore lppMetadataStore) {
+        return new LppRoutingTableOrchestrator(lppMetadataStore);
+    }
+
+    @Bean
     public LppStateAggregator lppStateAggregator(LppMetadataStore lppMetadataStore) {
         return new LppStateAggregator(lppMetadataStore);
     }
@@ -163,10 +169,11 @@ public class LppControllerConfig {
             LppDiscovery lppDiscovery,
             LppShardAllocator lppShardAllocator,
             LppGoalStateOrchestrator lppGoalStateOrchestrator,
+            LppRoutingTableOrchestrator lppRoutingTableOrchestrator,
             LppStateAggregator lppStateAggregator,
             LppMetadataStore lppMetadataStore) {
         return new LppTaskContext(
                 lppDiscovery, lppShardAllocator, lppGoalStateOrchestrator,
-                lppStateAggregator, lppMetadataStore, namespace, region);
+                lppRoutingTableOrchestrator, lppStateAggregator, lppMetadataStore, namespace, region);
     }
 }

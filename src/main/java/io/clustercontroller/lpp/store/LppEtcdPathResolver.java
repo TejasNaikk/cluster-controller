@@ -90,6 +90,14 @@ public class LppEtcdPathResolver {
     }
 
     // -------------------------------------------------------------------------
+    // ROUTING TABLE PATH
+    // -------------------------------------------------------------------------
+
+    public String routingTablePath() {
+        return join(ROOT, env, "routing", "goal-state");
+    }
+
+    // -------------------------------------------------------------------------
     // TASK PATHS  (same pattern as OS controller, scoped to lpp env)
     // -------------------------------------------------------------------------
 

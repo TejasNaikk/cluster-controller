@@ -56,6 +56,12 @@ class LppEtcdPathResolverTest {
     }
 
     @Test
+    void routingTablePath() {
+        assertThat(resolver.routingTablePath())
+                .isEqualTo("/lpp/staging/routing/goal-state");
+    }
+
+    @Test
     void differentEnvsProduceDifferentPaths() {
         LppEtcdPathResolver prod = new LppEtcdPathResolver("production");
         assertThat(prod.nodeActualStatePath("node-001"))
