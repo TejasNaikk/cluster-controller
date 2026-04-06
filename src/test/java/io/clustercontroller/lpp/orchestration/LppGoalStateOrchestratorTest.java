@@ -227,7 +227,6 @@ class LppGoalStateOrchestratorTest {
         assertThat(updated).isEmpty();
         verify(metadataStore, never()).putNodeGoalState(any());
     }
-    }
 
     // -------------------------------------------------------------------------
 
