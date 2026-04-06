@@ -194,6 +194,41 @@ class LppGoalStateOrchestratorTest {
                 .isEqualTo(desired.get("node-2").getShards().get(0).getKey());
     }
 
+    @Test
+    void buildDesiredGoalStatesSkipsDeadNodesNotInGroupTopology() {
+        // PA references node-dead (stale, removed from Grail) + node-live (healthy).
+        // Group topology only contains node-live. node-dead should be skipped.
+        Map<String, LppShardPlannedAllocation> allocations = new LinkedHashMap<>();
+        addAllocation(allocations, "grocery", "local_index", "local_index.1", 0,
+                List.of("node-live", "node-dead"), "g1");
+
+        // Group topology only has node-live — node-dead was pruned from Grail
+        Map<String, LppGroup> groups = groupsWithNodes("g1", List.of("node-live"));
+
+        Map<String, LppNodeGoalState> desired =
+                orchestrator.buildDesiredGoalStates(allocations, groups, "local");
+
+        assertThat(desired).containsKey("node-live");
+        assertThat(desired).doesNotContainKey("node-dead");
+    }
+
+    @Test
+    void orchestrateDoesNotPushGoalStateToDeadNode() {
+        // PA has node-dead which is not in the group topology
+        Map<String, LppShardPlannedAllocation> allocations = new LinkedHashMap<>();
+        addAllocation(allocations, "grocery", "local_index", "local_index.1", 0,
+                List.of("node-dead"), "g1");
+
+        // Empty groups — node-dead not discovered
+        Map<String, LppGroup> groups = Map.of();
+
+        List<String> updated = orchestrator.orchestrate(allocations, groups, "local");
+
+        assertThat(updated).isEmpty();
+        verify(metadataStore, never()).putNodeGoalState(any());
+    }
+    }
+
     // -------------------------------------------------------------------------
 
     /** Allocation with nodes from a single named group, shard 0 of grocery/local_index. */

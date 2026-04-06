@@ -144,7 +144,8 @@ public class LppGoalStateOrchestrator {
             Map<String, LppGroup> groups,
             String region) {
 
-        // nodeName → role (from its group)
+        // nodeName → role (from its group). Only live nodes appear here — dead nodes
+        // removed from Grail won't be in the group topology, so they are excluded.
         Map<String, String> nodeRoles = new HashMap<>();
         groups.values().forEach(g ->
                 g.getNodes().forEach(n -> nodeRoles.put(n.getNodeName(), g.getRole())));
@@ -159,7 +160,14 @@ public class LppGoalStateOrchestrator {
                     allocation.getShardId());
 
             for (String nodeName : allocation.getAssignedNodeNames()) {
-                String role = nodeRoles.getOrDefault(nodeName, "INGEST");
+                // Skip nodes not present in the current live topology — they are stale
+                // remnants in the PA from when they were alive. Pushing goal-states to them
+                // creates orphaned keys since the node no longer has an actual-state.
+                if (!nodeRoles.containsKey(nodeName)) {
+                    log.debug("LPP orchestrator: skipping dead node {} (not in current group topology)", nodeName);
+                    continue;
+                }
+                String role = nodeRoles.get(nodeName);
                 LppNodeGoalState gs = goalStates.computeIfAbsent(
                         nodeName,
                         n -> new LppNodeGoalState(n, role, region));
