@@ -7,7 +7,7 @@ import java.nio.file.Paths;
  *
  * <p>Key structure:
  * <pre>
- * /lpp/{env}/
+ * /lpp/{region}/
  *   nodes/{nodeName}/actual-state    ← node reports here (or Grail-derived)
  *   nodes/{nodeName}/goal-state      ← controller writes manifest here
  *   shards/{shardKey}/planned-allocation  ← controller's shard placement plan
@@ -16,6 +16,11 @@ import java.nio.file.Paths;
  *   groups/{groupId}/state           ← group state (capacity, health)
  *   indices/{indexKey}/conf          ← index definition (numShards, numGroups, role)
  *   ctl-tasks/{taskName}             ← task scheduling (same pattern as OS controller)
+ *
+ * /lpp/search-gateway/{env}/{region}/routing-table
+ *   ← routing table consumed by LPP search gateway
+ *   env    = deployment environment (staging, prod)
+ *   region = geographic region (dca, sjc, …)
  * </pre>
  */
 public class LppEtcdPathResolver {
@@ -23,9 +28,11 @@ public class LppEtcdPathResolver {
     private static final String SEP = "/";
     private static final String ROOT = "lpp";
 
+    private final String region;
     private final String env;
 
-    public LppEtcdPathResolver(String env) {
+    public LppEtcdPathResolver(String region, String env) {
+        this.region = region;
         this.env = env;
     }
 
@@ -34,15 +41,15 @@ public class LppEtcdPathResolver {
     // -------------------------------------------------------------------------
 
     public String nodesPrefix() {
-        return join(ROOT, env, "nodes", "");
+        return join(ROOT, region, "nodes", "");
     }
 
     public String nodeActualStatePath(String nodeName) {
-        return join(ROOT, env, "nodes", nodeName, "actual-state");
+        return join(ROOT, region, "nodes", nodeName, "actual-state");
     }
 
     public String nodeGoalStatePath(String nodeName) {
-        return join(ROOT, env, "nodes", nodeName, "goal-state");
+        return join(ROOT, region, "nodes", nodeName, "goal-state");
     }
 
     // -------------------------------------------------------------------------
@@ -50,15 +57,15 @@ public class LppEtcdPathResolver {
     // -------------------------------------------------------------------------
 
     public String shardsPrefix() {
-        return join(ROOT, env, "shards", "");
+        return join(ROOT, region, "shards", "");
     }
 
     public String shardPlannedAllocationPath(String shardKey) {
-        return join(ROOT, env, "shards", shardKey, "planned-allocation");
+        return join(ROOT, region, "shards", shardKey, "planned-allocation");
     }
 
     public String shardCapacityPath(String shardKey) {
-        return join(ROOT, env, "shards", shardKey, "capacity");
+        return join(ROOT, region, "shards", shardKey, "capacity");
     }
 
     // -------------------------------------------------------------------------
@@ -66,15 +73,15 @@ public class LppEtcdPathResolver {
     // -------------------------------------------------------------------------
 
     public String groupsPrefix() {
-        return join(ROOT, env, "groups", "");
+        return join(ROOT, region, "groups", "");
     }
 
     public String groupConfPath(String groupId) {
-        return join(ROOT, env, "groups", groupId, "conf");
+        return join(ROOT, region, "groups", groupId, "conf");
     }
 
     public String groupStatePath(String groupId) {
-        return join(ROOT, env, "groups", groupId, "state");
+        return join(ROOT, region, "groups", groupId, "state");
     }
 
     // -------------------------------------------------------------------------
@@ -82,11 +89,11 @@ public class LppEtcdPathResolver {
     // -------------------------------------------------------------------------
 
     public String indicesPrefix() {
-        return join(ROOT, env, "indices", "");
+        return join(ROOT, region, "indices", "");
     }
 
     public String indexConfPath(String indexKey) {
-        return join(ROOT, env, "indices", indexKey, "conf");
+        return join(ROOT, region, "indices", indexKey, "conf");
     }
 
     // -------------------------------------------------------------------------
@@ -94,19 +101,19 @@ public class LppEtcdPathResolver {
     // -------------------------------------------------------------------------
 
     public String routingTablePath() {
-        return join(ROOT, env, "routing", "goal-state");
+        return join(ROOT, "search-gateway", env, region, "routing-table");
     }
 
     // -------------------------------------------------------------------------
-    // TASK PATHS  (same pattern as OS controller, scoped to lpp env)
+    // TASK PATHS  (same pattern as OS controller, scoped to lpp region)
     // -------------------------------------------------------------------------
 
     public String tasksPrefix() {
-        return join(ROOT, env, "ctl-tasks", "");
+        return join(ROOT, region, "ctl-tasks", "");
     }
 
     public String taskPath(String taskName) {
-        return join(ROOT, env, "ctl-tasks", taskName);
+        return join(ROOT, region, "ctl-tasks", taskName);
     }
 
     // -------------------------------------------------------------------------
@@ -117,5 +124,9 @@ public class LppEtcdPathResolver {
 
     public String getEnv() {
         return env;
+    }
+
+    public String getRegion() {
+        return region;
     }
 }

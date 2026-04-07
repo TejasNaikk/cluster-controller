@@ -33,6 +33,9 @@ public class LppControllerConfig {
     @Value("${lpp.namespace:delivery-grocery}")
     private String namespace;
 
+    @Value("${lpp.env:staging}")
+    private String lppEnv;
+
     @Value("${lpp.region:local}")
     private String region;
 
@@ -51,7 +54,7 @@ public class LppControllerConfig {
 
     @Bean
     public LppEtcdPathResolver lppEtcdPathResolver() {
-        return new LppEtcdPathResolver(region);
+        return new LppEtcdPathResolver(region, lppEnv);
     }
 
     @Bean
