@@ -67,6 +67,22 @@ public class LppGoalStateOrchestrator {
 
         Map<String, LppNodeGoalState> desired = buildDesiredGoalStates(allocations, groups, region);
 
+        // Clean up goal states for nodes no longer in the desired set (dead nodes).
+        // A node is dead if it no longer appears in any live group in the current topology.
+        // We own the goal-state namespace — orphaned keys must be removed so dead nodes
+        // leave no traces in etcd.
+        Map<String, LppNodeGoalState> allExistingGoalStates = metadataStore.getAllNodeGoalStates();
+        for (String nodeName : allExistingGoalStates.keySet()) {
+            if (!desired.containsKey(nodeName)) {
+                if (observeOnly) {
+                    log.info("LPP orchestrator [observe-only]: would delete orphaned goal state for dead node {}", nodeName);
+                } else {
+                    log.info("LPP orchestrator: deleting orphaned goal state for dead node {}", nodeName);
+                    metadataStore.deleteNodeGoalState(nodeName);
+                }
+            }
+        }
+
         // Find all divergent nodes grouped by their replica group.
         // We need the groupId per node to apply the per-group rollout cap.
         Map<String, String> nodeToGroup = buildNodeToGroupMap(groups);

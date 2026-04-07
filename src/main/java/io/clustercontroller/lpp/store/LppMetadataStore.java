@@ -84,6 +84,21 @@ public class LppMetadataStore {
                 .map(v -> fromJson(v, LppNodeGoalState.class));
     }
 
+    /** Returns all node goal states currently in etcd. Key = nodeName. */
+    public Map<String, LppNodeGoalState> getAllNodeGoalStates() {
+        Map<String, String> raw = getWithPrefix(pathResolver.nodesPrefix());
+        Map<String, LppNodeGoalState> result = new LinkedHashMap<>();
+        raw.forEach((key, value) -> {
+            if (key.endsWith("/goal-state")) {
+                LppNodeGoalState gs = fromJson(value, LppNodeGoalState.class);
+                if (gs != null) {
+                    result.put(gs.getNodeName(), gs);
+                }
+            }
+        });
+        return result;
+    }
+
     // -------------------------------------------------------------------------
     // SHARD PLANNED ALLOCATION
     // -------------------------------------------------------------------------

@@ -30,6 +30,7 @@ class LppGoalStateOrchestratorTest {
         orchestrator = new LppGoalStateOrchestrator(metadataStore, false);
         when(metadataStore.getNodeGoalState(any())).thenReturn(Optional.empty());
         when(metadataStore.getNodeActualState(any())).thenReturn(Optional.empty());
+        when(metadataStore.getAllNodeGoalStates()).thenReturn(Map.of());
     }
 
     // ---- basic push ----
@@ -226,6 +227,50 @@ class LppGoalStateOrchestratorTest {
 
         assertThat(updated).isEmpty();
         verify(metadataStore, never()).putNodeGoalState(any());
+    }
+
+    // ---- dead node cleanup ----
+
+    @Test
+    void orchestrateDeletesGoalStateForDeadNode() {
+        // node-dead has a goal state in etcd but is no longer in any live group topology
+        LppNodeGoalState deadGs = new LppNodeGoalState("node-dead", "INGEST", "local");
+        when(metadataStore.getAllNodeGoalStates()).thenReturn(Map.of("node-dead", deadGs));
+
+        // Live topology has only node-live
+        Map<String, LppShardPlannedAllocation> allocations = singleShardAllocations("node-live", "g1");
+        Map<String, LppGroup> groups = groupsWithNodes("g1", List.of("node-live"));
+
+        orchestrator.orchestrate(allocations, groups, "local");
+
+        verify(metadataStore).deleteNodeGoalState("node-dead");
+    }
+
+    @Test
+    void orchestrateDoesNotDeleteGoalStateForLiveNode() {
+        LppNodeGoalState liveGs = new LppNodeGoalState("node-1", "INGEST", "local");
+        when(metadataStore.getAllNodeGoalStates()).thenReturn(Map.of("node-1", liveGs));
+
+        Map<String, LppShardPlannedAllocation> allocations = singleShardAllocations("node-1", "g1");
+        Map<String, LppGroup> groups = groupsWithNodes("g1", List.of("node-1"));
+
+        orchestrator.orchestrate(allocations, groups, "local");
+
+        verify(metadataStore, never()).deleteNodeGoalState("node-1");
+    }
+
+    @Test
+    void observeOnlyDoesNotDeleteGoalStateForDeadNode() {
+        LppGoalStateOrchestrator observeOnly = new LppGoalStateOrchestrator(metadataStore, true);
+        LppNodeGoalState deadGs = new LppNodeGoalState("node-dead", "INGEST", "local");
+        when(metadataStore.getAllNodeGoalStates()).thenReturn(Map.of("node-dead", deadGs));
+
+        Map<String, LppShardPlannedAllocation> allocations = singleShardAllocations("node-live", "g1");
+        Map<String, LppGroup> groups = groupsWithNodes("g1", List.of("node-live"));
+
+        observeOnly.orchestrate(allocations, groups, "local");
+
+        verify(metadataStore, never()).deleteNodeGoalState(any());
     }
 
     // -------------------------------------------------------------------------

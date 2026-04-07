@@ -120,12 +120,24 @@ public class LppShardAllocator {
                 // Stable allocation check — reuse existing etcd allocation before running the
                 // strategy. This is critical: without this, random strategies produce a new
                 // assignment every tick, making convergence impossible.
+                //
+                // We do reconcile the existing PA against the live topology:
+                //  - Dead groups (no longer in Grail) are pruned from the PA.
+                //  - assignedNodeNames is rebuilt from the live group's current node list,
+                //    which also picks up new replicas that joined since initial allocation.
+                //  - If after pruning the group count drops below required scale,
+                //    we fall through to re-allocate.
                 Optional<LppShardPlannedAllocation> existing =
                         metadataStore.getShardPlannedAllocation(shardKey);
                 if (existing.isPresent()) {
-                    log.debug("LPP planner: shard {} stable (etcd)", shardKey);
-                    result.put(shardKey, existing.get());
-                    continue;
+                    LppShardPlannedAllocation reconciled =
+                            reconcileAllocation(existing.get(), groups, scale, shardKey);
+                    if (reconciled != null) {
+                        result.put(shardKey, reconciled);
+                        continue;
+                    }
+                    // reconciled == null means group count fell below scale — re-allocate below
+                    log.info("LPP planner: shard {} under-allocated after pruning dead groups, re-allocating", shardKey);
                 }
 
                 // No existing allocation — run the strategy to pick initial placement.
@@ -184,5 +196,72 @@ public class LppShardAllocator {
                 .filter(LppGroup::hasEligibleNodes)
                 .filter(g -> g.canServe(type))
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Reconcile an existing PA against the current live group topology.
+     *
+     * <p>For each group ID still in the PA:
+     * <ul>
+     *   <li>If the group is still alive in Grail, rebuild its node list from the current
+     *       topology (picks up new replicas, drops dead ones).</li>
+     *   <li>If the group is gone from Grail, drop it from ingest/search/assigned lists.</li>
+     * </ul>
+     *
+     * <p>Returns the reconciled PA (persisting to etcd if changed), or {@code null} if the
+     * surviving group count is below the required scale — signalling the caller to re-allocate.
+     */
+    private LppShardPlannedAllocation reconcileAllocation(
+            LppShardPlannedAllocation existing,
+            Map<String, LppGroup> liveGroups,
+            int requiredScale,
+            String shardKey) {
+
+        List<String> liveIngest  = new ArrayList<>();
+        List<String> liveSearch  = new ArrayList<>();
+        List<String> liveAssigned = new ArrayList<>();
+        List<String> liveNodes   = new ArrayList<>();
+
+        for (String gid : existing.getAssignedGroupIds()) {
+            LppGroup liveGroup = liveGroups.get(gid);
+            if (liveGroup == null) {
+                log.info("LPP planner: shard {} — group {} no longer in topology, pruning from PA",
+                        shardKey, gid);
+                continue;
+            }
+            liveAssigned.add(gid);
+            if (existing.getIngestGroupIds().contains(gid)) liveIngest.add(gid);
+            if (existing.getSearchGroupIds().contains(gid)) liveSearch.add(gid);
+            // Rebuild node list from live topology (picks up new replicas, drops dead ones)
+            liveGroup.getNodes().forEach(n -> {
+                if (!liveNodes.contains(n.getNodeName())) {
+                    liveNodes.add(n.getNodeName());
+                }
+            });
+        }
+
+        // If surviving groups are below required scale, signal for re-allocation
+        if (liveAssigned.size() < requiredScale) {
+            return null;
+        }
+
+        boolean changed = !liveAssigned.equals(existing.getAssignedGroupIds())
+                || !liveNodes.equals(existing.getAssignedNodeNames());
+
+        existing.setAssignedGroupIds(liveAssigned);
+        existing.setIngestGroupIds(liveIngest);
+        existing.setSearchGroupIds(liveSearch);
+        existing.setAssignedNodeNames(liveNodes);
+
+        if (changed) {
+            log.info("LPP planner: shard {} — PA reconciled ({} groups, {} nodes)",
+                    shardKey, liveAssigned.size(), liveNodes.size());
+            existing.setLastUpdatedMs(System.currentTimeMillis());
+            metadataStore.putShardPlannedAllocation(existing);
+        } else {
+            log.debug("LPP planner: shard {} stable (etcd)", shardKey);
+        }
+
+        return existing;
     }
 }

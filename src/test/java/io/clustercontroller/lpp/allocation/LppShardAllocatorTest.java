@@ -170,6 +170,80 @@ class LppShardAllocatorTest {
         assertThat(result).isEmpty();
     }
 
+    // ---- PA reconciliation — dead node / group pruning ----
+
+    @Test
+    void prunesDeadNodeFromExistingAllocation() {
+        // Existing PA has 3 nodes from g1, but current topology only has 2 (one died)
+        LppGroup g1 = healthyGroup("g1", 2);  // live topology: 2 nodes
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 1, 1);
+
+        // Existing PA was built when g1 had 3 nodes
+        LppGroup g1Old = healthyGroup("g1", 3);
+        LppShardEntry entry = new LppShardEntry("grocery", "idx", "idx.1", 0);
+        LppShardPlannedAllocation existing = new LppShardPlannedAllocation(entry);
+        existing.addGroup(g1Old);
+
+        when(metadataStore.getShardPlannedAllocation("grocery.idx.1.0"))
+                .thenReturn(Optional.of(existing));
+
+        Map<String, LppShardPlannedAllocation> result = allocator.allocate(
+                Map.of("g1", g1), List.of(index));
+
+        // PA updated in etcd (nodes changed)
+        verify(metadataStore).putShardPlannedAllocation(any());
+        assertThat(result.get("grocery.idx.1.0").getAssignedNodeNames()).hasSize(2);
+        assertThat(result.get("grocery.idx.1.0").getAssignedGroupIds()).containsOnly("g1");
+    }
+
+    @Test
+    void prunesDeadGroupFromExistingAllocationAndReAllocates() {
+        // scale=2, existing PA has g1+g2, but g2 is dead — drops to 1 group < scale=2 → re-allocate
+        LppGroup g1 = healthyGroup("g1", 2);
+        LppGroup g3 = healthyGroup("g3", 2);  // new group available
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 1, 2);
+
+        LppShardEntry entry = new LppShardEntry("grocery", "idx", "idx.1", 0);
+        LppShardPlannedAllocation existing = new LppShardPlannedAllocation(entry);
+        existing.addGroup(healthyGroup("g1", 2));
+        existing.addGroup(healthyGroup("g2", 2));  // g2 is now dead
+
+        when(metadataStore.getShardPlannedAllocation("grocery.idx.1.0"))
+                .thenReturn(Optional.of(existing));
+
+        Map<String, LppGroup> liveGroups = new LinkedHashMap<>();
+        liveGroups.put("g1", g1);
+        liveGroups.put("g3", g3);
+
+        Map<String, LppShardPlannedAllocation> result = allocator.allocate(liveGroups, List.of(index));
+
+        // Should have re-allocated and written a new PA
+        verify(metadataStore).putShardPlannedAllocation(any());
+        // Result should have 2 groups (scale satisfied with live groups)
+        assertThat(result.get("grocery.idx.1.0").getAssignedGroupIds()).hasSize(2);
+    }
+
+    @Test
+    void picksUpNewReplicaJoiningExistingGroup() {
+        // g1 had 2 nodes when PA was written; a 3rd replica joined the group
+        LppGroup g1Live = healthyGroup("g1", 3);  // now has 3 nodes
+        LppIndexDefinition index = new LppIndexDefinition("grocery", "idx", "idx.1", 1, 1);
+
+        LppShardEntry entry = new LppShardEntry("grocery", "idx", "idx.1", 0);
+        LppShardPlannedAllocation existing = new LppShardPlannedAllocation(entry);
+        existing.addGroup(healthyGroup("g1", 2));  // old PA only had 2 nodes
+
+        when(metadataStore.getShardPlannedAllocation("grocery.idx.1.0"))
+                .thenReturn(Optional.of(existing));
+
+        Map<String, LppShardPlannedAllocation> result = allocator.allocate(
+                Map.of("g1", g1Live), List.of(index));
+
+        // New replica should be in the updated PA
+        verify(metadataStore).putShardPlannedAllocation(any());
+        assertThat(result.get("grocery.idx.1.0").getAssignedNodeNames()).hasSize(3);
+    }
+
     // ---- stable allocation ----
 
     @Test
