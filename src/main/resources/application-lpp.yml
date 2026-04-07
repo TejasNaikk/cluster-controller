@@ -8,6 +8,10 @@ lpp:
   # Region label written into node goal states (must match LP node's region filter)
   region: ${LPP_REGION:local}
 
+  # Deployment environment — used in the search-gateway routing table path
+  # e.g. staging → /lpp/search-gateway/staging/{region}/routing-table
+  env: ${LPP_ENV:staging}
+
   # When true, compute desired state but do not write to etcd (initial rollout safety switch)
   observeOnly: ${LPP_OBSERVE_ONLY:false}
 
