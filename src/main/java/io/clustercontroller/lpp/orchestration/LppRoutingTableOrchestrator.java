@@ -19,22 +19,24 @@ import java.util.stream.Collectors;
  * AA (Actual-state, ACTIVE) tells us which nodes ARE actively serving it right now.
  *
  * <ol>
- *   <li><b>Primary path — PA ∩ AA</b>: nodes that appear in the shard's planned allocation
- *       AND have the shard marked ACTIVE in their actual state, with a fresh heartbeat.
- *       These are the preferred routing targets.</li>
- *   <li><b>Fallback path</b>: if the intersection is empty (e.g. all planned nodes are still
- *       loading, or mid-handoff), fall back to ANY node with shard ACTIVE + fresh heartbeat,
- *       regardless of whether it is in the planned allocation. This prevents a dark shard
- *       during migrations.</li>
- *   <li><b>Empty result</b>: if even the fallback is empty, the shard gets no routes.
- *       The gateway must handle this as a temporarily unavailable shard.</li>
+ *   <li><b>Primary path — PA ∩ AA</b>: nodes in PA that have the shard ACTIVE + fresh heartbeat.</li>
+ *   <li><b>Fallback</b>: if PA ∩ AA is empty, any node with shard ACTIVE + fresh heartbeat.</li>
+ *   <li><b>Empty</b>: no routes — gateway must treat as temporarily unavailable.</li>
  * </ol>
  *
+ * <h3>Output format</h3>
+ * <pre>
+ * {
+ *   "version": 5,
+ *   "index_shard_routing": {
+ *     "deals_index.v1": { "0": ["node-a", "node-b"], "1": ["node-c"] },
+ *     "local_index.v1": { ... }
+ *   }
+ * }
+ * </pre>
+ *
  * <h3>Version tracking</h3>
- * <p>The routing table carries a monotonically increasing {@code version} field.
- * The version is bumped only when the routing table content actually changes
- * (new nodes added, nodes removed, or shard set changes). Unchanged ticks do not
- * increment the version.
+ * <p>Version bumps only when content changes (order-insensitive node set comparison).
  */
 @Slf4j
 public class LppRoutingTableOrchestrator {
@@ -47,10 +49,7 @@ public class LppRoutingTableOrchestrator {
 
     /**
      * Recompute the routing table from current planned allocations and actual states,
-     * then persist to etcd if it changed.
-     *
-     * @param plannedAllocations current PA map (shardKey → allocation)
-     * @return the new routing table (regardless of whether it changed)
+     * then persist to etcd if changed.
      */
     public LppRoutingTable computeAndPersist(Map<String, LppShardPlannedAllocation> plannedAllocations) {
         if (plannedAllocations.isEmpty()) {
@@ -58,7 +57,6 @@ public class LppRoutingTableOrchestrator {
             return new LppRoutingTable(0);
         }
 
-        // Load all actual states once — avoids N etcd reads in the loop
         Map<String, LppNodeActualState> allActualStates = metadataStore.getAllNodeActualStates();
 
         LppRoutingTable existing = metadataStore.getRoutingTable().orElse(null);
@@ -70,7 +68,10 @@ public class LppRoutingTableOrchestrator {
             newTable.setVersion(nextVersion + 1);
             newTable.setLastUpdatedMs(System.currentTimeMillis());
             metadataStore.putRoutingTable(newTable);
-            log.info("LPP routing: table updated → version={}, shards={}", newTable.getVersion(), newTable.getShardRoutes().size());
+            int totalShards = newTable.getRoutes().values().stream()
+                    .mapToInt(Map::size).sum();
+            log.info("LPP routing: table updated → version={}, indices={}, shards={}",
+                    newTable.getVersion(), newTable.getRoutes().size(), totalShards);
         } else {
             log.debug("LPP routing: table unchanged (version={})", nextVersion);
         }
@@ -89,20 +90,19 @@ public class LppRoutingTableOrchestrator {
 
         LppRoutingTable table = new LppRoutingTable(version);
 
-        for (Map.Entry<String, LppShardPlannedAllocation> entry : plannedAllocations.entrySet()) {
-            String shardKey = entry.getKey();
-            LppShardPlannedAllocation alloc = entry.getValue();
+        for (LppShardPlannedAllocation alloc : plannedAllocations.values()) {
+            String shardKey = alloc.getShardKey();
+            String fullIndexName = alloc.getFullIndexName();
+            int shardId = alloc.getShardId();
 
-            List<LppShardRoute> routes = resolveRoutes(shardKey, alloc, allActualStates);
-            table.setRoutes(shardKey, routes);
+            List<String> nodes = resolveNodes(shardKey, alloc, allActualStates);
+            table.setShardNodes(fullIndexName, shardId, nodes);
 
-            if (routes.isEmpty()) {
-                log.warn("LPP routing: shard {} has no routable nodes (PA={}, fallback exhausted)",
-                        shardKey, alloc.getAssignedNodeNames());
+            if (nodes.isEmpty()) {
+                log.warn("LPP routing: {}/{} has no routable nodes (PA={}, fallback exhausted)",
+                        fullIndexName, shardId, alloc.getAssignedNodeNames().size());
             } else {
-                log.debug("LPP routing: shard {} → {} nodes: {}",
-                        shardKey, routes.size(),
-                        routes.stream().map(LppShardRoute::getNodeName).collect(Collectors.joining(",")));
+                log.debug("LPP routing: {}/{} → {} nodes", fullIndexName, shardId, nodes.size());
             }
         }
 
@@ -110,83 +110,69 @@ public class LppRoutingTableOrchestrator {
     }
 
     /**
-     * Resolve routing nodes for a single shard.
-     *
-     * <p>Primary: PA ∩ AA (planned + ACTIVE + fresh heartbeat).
-     * Fallback: all ACTIVE + fresh heartbeat nodes for this shard.
+     * Resolve routable node names for a single shard.
+     * Primary: PA ∩ AA. Fallback: all ACTIVE+fresh nodes.
      */
-    List<LppShardRoute> resolveRoutes(
+    List<String> resolveNodes(
             String shardKey,
             LppShardPlannedAllocation alloc,
             Map<String, LppNodeActualState> allActualStates) {
 
         Set<String> paNodes = new HashSet<>(alloc.getAssignedNodeNames());
 
-        // Primary: PA ∩ AA — nodes in PA that are ACTIVE and have fresh heartbeat
-        List<LppShardRoute> primaryRoutes = paNodes.stream()
+        // Primary: PA ∩ AA
+        List<String> primary = paNodes.stream()
                 .map(allActualStates::get)
                 .filter(Objects::nonNull)
                 .filter(state -> !state.isStale(LppConstants.STALE_NODE_TIMEOUT_MS))
                 .filter(state -> isShardActive(state, shardKey))
-                .map(state -> toRoute(state, alloc))
+                .map(LppNodeActualState::getNodeName)
                 .collect(Collectors.toList());
 
-        if (!primaryRoutes.isEmpty()) {
-            return primaryRoutes;
+        if (!primary.isEmpty()) {
+            return primary;
         }
 
-        // Fallback: any node in AA with shard ACTIVE + fresh heartbeat, even if not in PA
-        log.info("LPP routing: shard {} PA∩AA empty — using fallback (all ACTIVE nodes), PA={}",
-                shardKey, paNodes);
+        // Fallback: any ACTIVE+fresh node for this shard
+        log.info("LPP routing: {}/{} PA∩AA empty — fallback to all ACTIVE nodes",
+                alloc.getFullIndexName(), alloc.getShardId());
 
         return allActualStates.values().stream()
                 .filter(state -> !state.isStale(LppConstants.STALE_NODE_TIMEOUT_MS))
                 .filter(state -> isShardActive(state, shardKey))
-                .map(state -> toRoute(state, alloc))
+                .map(LppNodeActualState::getNodeName)
                 .collect(Collectors.toList());
-    }
-
-    private boolean isShardActive(LppNodeActualState state, String shardKey) {
-        return state.getShardStates().stream()
-                .anyMatch(ss -> shardKey.equals(ss.getShardKey()) && ss.isActive());
-    }
-
-    private LppShardRoute toRoute(LppNodeActualState state, LppShardPlannedAllocation alloc) {
-        return new LppShardRoute(
-                state.getNodeName(),
-                state.getHost(),
-                state.getPort(),
-                state.getGrailShardId());
     }
 
     /**
      * Returns true if the new routing table differs from the existing one.
-     * Compares shard-by-shard: same keys, same node names per shard.
+     * Compares per-shard node sets (order-insensitive).
      */
     boolean hasChanged(LppRoutingTable existing, LppRoutingTable newTable) {
         if (existing == null) {
-            return !newTable.getShardRoutes().isEmpty();
+            return !newTable.getRoutes().isEmpty();
         }
-        Map<String, List<LppShardRoute>> oldRoutes = existing.getShardRoutes();
-        Map<String, List<LppShardRoute>> newRoutes = newTable.getShardRoutes();
+        Map<String, Map<String, List<String>>> oldRoutes = existing.getRoutes();
+        Map<String, Map<String, List<String>>> newRoutes = newTable.getRoutes();
 
-        if (!oldRoutes.keySet().equals(newRoutes.keySet())) {
-            return true;
-        }
+        if (!oldRoutes.keySet().equals(newRoutes.keySet())) return true;
 
-        for (String shardKey : newRoutes.keySet()) {
-            Set<String> oldNodes = nodeSet(oldRoutes.get(shardKey));
-            Set<String> newNodes = nodeSet(newRoutes.get(shardKey));
-            if (!oldNodes.equals(newNodes)) {
-                return true;
+        for (String indexName : newRoutes.keySet()) {
+            Map<String, List<String>> oldShards = oldRoutes.get(indexName);
+            Map<String, List<String>> newShards = newRoutes.get(indexName);
+            if (!oldShards.keySet().equals(newShards.keySet())) return true;
+            for (String shardId : newShards.keySet()) {
+                Set<String> oldNodes = new HashSet<>(oldShards.getOrDefault(shardId, List.of()));
+                Set<String> newNodes = new HashSet<>(newShards.getOrDefault(shardId, List.of()));
+                if (!oldNodes.equals(newNodes)) return true;
             }
         }
 
         return false;
     }
 
-    private Set<String> nodeSet(List<LppShardRoute> routes) {
-        if (routes == null) return Collections.emptySet();
-        return routes.stream().map(LppShardRoute::getNodeName).collect(Collectors.toSet());
+    private boolean isShardActive(LppNodeActualState state, String shardKey) {
+        return state.getShardStates().stream()
+                .anyMatch(ss -> shardKey.equals(ss.getShardKey()) && ss.isActive());
     }
 }

@@ -43,21 +43,19 @@ class LppRoutingTableOrchestratorTest {
         @Test
         void emptyPlannedAllocationsProducesEmptyTable() {
             LppRoutingTable table = orchestrator.buildRoutingTable(Map.of(), Map.of(), 0);
-            assertThat(table.getShardRoutes()).isEmpty();
+            assertThat(table.getRoutes()).isEmpty();
         }
 
         @Test
         void primaryPathNodeInPaAndActive() {
-            // PA has node-1; node-1's actual state has shard ACTIVE
             String shardKey = "grocery.deals.v1.0";
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-1");
             Map<String, LppNodeActualState> aa = Map.of("node-1", activeNode("node-1", "g1", shardKey));
 
             LppRoutingTable table = orchestrator.buildRoutingTable(pa, aa, 0);
 
-            List<LppShardRoute> routes = table.getShardRoutes().get(shardKey);
-            assertThat(routes).hasSize(1);
-            assertThat(routes.get(0).getNodeName()).isEqualTo("node-1");
+            List<String> nodes = table.getRoutes().get("deals.v1").get("0");
+            assertThat(nodes).containsExactly("node-1");
         }
 
         @Test
@@ -72,10 +70,8 @@ class LppRoutingTableOrchestratorTest {
 
             LppRoutingTable table = orchestrator.buildRoutingTable(pa, aa, 0);
 
-            List<LppShardRoute> routes = table.getShardRoutes().get(shardKey);
-            assertThat(routes).hasSize(3);
-            assertThat(routes).extracting(LppShardRoute::getNodeName)
-                    .containsExactlyInAnyOrder("node-1", "node-2", "node-3");
+            List<String> nodes = table.getRoutes().get("deals.v1").get("0");
+            assertThat(nodes).containsExactlyInAnyOrder("node-1", "node-2", "node-3");
         }
 
         @Test
@@ -90,9 +86,8 @@ class LppRoutingTableOrchestratorTest {
 
             LppRoutingTable table = orchestrator.buildRoutingTable(pa, aa, 0);
 
-            List<LppShardRoute> routes = table.getShardRoutes().get(shardKey);
-            assertThat(routes).hasSize(1);
-            assertThat(routes.get(0).getNodeName()).isEqualTo("node-1");
+            List<String> nodes = table.getRoutes().get("deals.v1").get("0");
+            assertThat(nodes).containsExactly("node-1");
         }
 
         @Test
@@ -100,13 +95,13 @@ class LppRoutingTableOrchestratorTest {
             // node-1 in PA but no actual state in etcd (not yet discovered)
             String shardKey = "grocery.deals.v1.0";
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-1");
-            Map<String, LppNodeActualState> aa = Map.of(); // node-1 not present
+            Map<String, LppNodeActualState> aa = Map.of();
 
             LppRoutingTable table = orchestrator.buildRoutingTable(pa, aa, 0);
 
-            List<LppShardRoute> routes = table.getShardRoutes().get(shardKey);
-            // Falls through to fallback — still empty because no node is ACTIVE anywhere
-            assertThat(routes).isEmpty();
+            // Falls through to fallback — empty because no node is ACTIVE anywhere
+            List<String> nodes = table.getRoutes().get("deals.v1").get("0");
+            assertThat(nodes).isEmpty();
         }
 
         @Test
@@ -116,21 +111,19 @@ class LppRoutingTableOrchestratorTest {
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-1");
             Map<String, LppNodeActualState> aa = Map.of(
                     "node-1", nodeWithShardState("node-1", "g1", shardKey, "DOWNLOADING"),
-                    "node-2", activeNode("node-2", "g2", shardKey)  // not in PA
+                    "node-2", activeNode("node-2", "g2", shardKey) // not in PA
             );
 
             LppRoutingTable table = orchestrator.buildRoutingTable(pa, aa, 0);
 
-            List<LppShardRoute> routes = table.getShardRoutes().get(shardKey);
-            assertThat(routes).hasSize(1);
-            assertThat(routes.get(0).getNodeName()).isEqualTo("node-2");
+            List<String> nodes = table.getRoutes().get("deals.v1").get("0");
+            assertThat(nodes).containsExactly("node-2");
         }
 
         @Test
         void fallbackPicksMultipleActiveNodesNotInPa() {
             String shardKey = "grocery.deals.v1.0";
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-new");
-            // node-new is in PA but not yet active; old nodes have shard active
             Map<String, LppNodeActualState> aa = Map.of(
                     "node-new", nodeWithShardState("node-new", "g2", shardKey, "DOWNLOADING"),
                     "node-old-1", activeNode("node-old-1", "g1", shardKey),
@@ -139,10 +132,8 @@ class LppRoutingTableOrchestratorTest {
 
             LppRoutingTable table = orchestrator.buildRoutingTable(pa, aa, 0);
 
-            List<LppShardRoute> routes = table.getShardRoutes().get(shardKey);
-            assertThat(routes).hasSize(2);
-            assertThat(routes).extracting(LppShardRoute::getNodeName)
-                    .containsExactlyInAnyOrder("node-old-1", "node-old-2");
+            List<String> nodes = table.getRoutes().get("deals.v1").get("0");
+            assertThat(nodes).containsExactlyInAnyOrder("node-old-1", "node-old-2");
         }
 
         @Test
@@ -150,22 +141,18 @@ class LppRoutingTableOrchestratorTest {
             String shardKey = "grocery.deals.v1.0";
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-stale");
             LppNodeActualState stale = activeNode("node-stale", "g1", shardKey);
-            stale.setHeartbeatTimestampMs(0L); // very stale
+            stale.setHeartbeatTimestampMs(0L);
 
-            Map<String, LppNodeActualState> aa = Map.of("node-stale", stale);
+            LppRoutingTable table = orchestrator.buildRoutingTable(pa, Map.of("node-stale", stale), 0);
 
-            LppRoutingTable table = orchestrator.buildRoutingTable(pa, aa, 0);
-
-            List<LppShardRoute> routes = table.getShardRoutes().get(shardKey);
-            // Stale node excluded from primary and fallback
-            assertThat(routes).isEmpty();
+            List<String> nodes = table.getRoutes().get("deals.v1").get("0");
+            assertThat(nodes).isEmpty();
         }
 
         @Test
         void staleNodesExcludedFromFallback() {
             String shardKey = "grocery.deals.v1.0";
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-planned");
-            // node-planned not active; node-stale active but stale heartbeat
             LppNodeActualState stale = activeNode("node-stale", "g2", shardKey);
             stale.setHeartbeatTimestampMs(0L);
 
@@ -176,8 +163,8 @@ class LppRoutingTableOrchestratorTest {
 
             LppRoutingTable table = orchestrator.buildRoutingTable(pa, aa, 0);
 
-            List<LppShardRoute> routes = table.getShardRoutes().get(shardKey);
-            assertThat(routes).isEmpty();
+            List<String> nodes = table.getRoutes().get("deals.v1").get("0");
+            assertThat(nodes).isEmpty();
         }
 
         @Test
@@ -190,28 +177,12 @@ class LppRoutingTableOrchestratorTest {
 
             LppRoutingTable table = orchestrator.buildRoutingTable(pa, aa, 0);
 
-            List<LppShardRoute> routes = table.getShardRoutes().get(shardKey0);
-            assertThat(routes).isEmpty();
+            List<String> nodes = table.getRoutes().get("deals.v1").get("0");
+            assertThat(nodes).isEmpty();
         }
 
         @Test
-        void routeCarriesHostAndPort() {
-            String shardKey = "grocery.deals.v1.0";
-            Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-1");
-            LppNodeActualState state = activeNode("node-1", "g1", shardKey);
-            state.setHost("lpp-host-42");
-            state.setPort(25752);
-
-            LppRoutingTable table = orchestrator.buildRoutingTable(pa, Map.of("node-1", state), 0);
-
-            LppShardRoute route = table.getShardRoutes().get(shardKey).get(0);
-            assertThat(route.getHost()).isEqualTo("lpp-host-42");
-            assertThat(route.getPort()).isEqualTo(25752);
-            assertThat(route.getGroupId()).isEqualTo("g1");
-        }
-
-        @Test
-        void multipleShardsMappedIndependently() {
+        void multipleShardsOfSameIndexMappedIndependently() {
             String sk0 = "grocery.deals.v1.0";
             String sk1 = "grocery.deals.v1.1";
             Map<String, LppShardPlannedAllocation> pa = new LinkedHashMap<>();
@@ -225,9 +196,30 @@ class LppRoutingTableOrchestratorTest {
 
             LppRoutingTable table = orchestrator.buildRoutingTable(pa, aa, 0);
 
-            assertThat(table.getShardRoutes()).containsKeys(sk0, sk1);
-            assertThat(table.getShardRoutes().get(sk0).get(0).getNodeName()).isEqualTo("node-a");
-            assertThat(table.getShardRoutes().get(sk1).get(0).getNodeName()).isEqualTo("node-b");
+            Map<String, List<String>> shards = table.getRoutes().get("deals.v1");
+            assertThat(shards).containsKeys("0", "1");
+            assertThat(shards.get("0")).containsExactly("node-a");
+            assertThat(shards.get("1")).containsExactly("node-b");
+        }
+
+        @Test
+        void multipleIndicesMappedSeparately() {
+            String sk0 = "grocery.deals.v1.0";
+            String sk1 = "grocery.local.v2.0";
+            Map<String, LppShardPlannedAllocation> pa = new LinkedHashMap<>();
+            pa.putAll(paWithNodes(sk0, "node-a"));
+            pa.putAll(paWithNodes(sk1, "node-b"));
+
+            Map<String, LppNodeActualState> aa = Map.of(
+                    "node-a", activeNode("node-a", "g1", sk0),
+                    "node-b", activeNode("node-b", "g2", sk1)
+            );
+
+            LppRoutingTable table = orchestrator.buildRoutingTable(pa, aa, 0);
+
+            assertThat(table.getRoutes()).containsKeys("deals.v1", "local.v2");
+            assertThat(table.getRoutes().get("deals.v1").get("0")).containsExactly("node-a");
+            assertThat(table.getRoutes().get("local.v2").get("0")).containsExactly("node-b");
         }
     }
 
@@ -241,7 +233,7 @@ class LppRoutingTableOrchestratorTest {
         @Test
         void nullExistingWithNonEmptyNewIsChanged() {
             LppRoutingTable newTable = new LppRoutingTable(0);
-            newTable.setRoutes("sk", List.of(new LppShardRoute("n1", "h", 9000, "g1")));
+            newTable.setShardNodes("deals.v1", 0, List.of("n1"));
             assertThat(orchestrator.hasChanged(null, newTable)).isTrue();
         }
 
@@ -253,39 +245,47 @@ class LppRoutingTableOrchestratorTest {
         @Test
         void identicalTablesAreNotChanged() {
             LppRoutingTable t1 = new LppRoutingTable(1);
-            t1.setRoutes("sk", List.of(new LppShardRoute("n1", "h", 9000, "g1")));
+            t1.setShardNodes("deals.v1", 0, List.of("n1"));
             LppRoutingTable t2 = new LppRoutingTable(1);
-            t2.setRoutes("sk", List.of(new LppShardRoute("n1", "h", 9000, "g1")));
+            t2.setShardNodes("deals.v1", 0, List.of("n1"));
             assertThat(orchestrator.hasChanged(t1, t2)).isFalse();
         }
 
         @Test
         void addedShardIsDetectedAsChange() {
             LppRoutingTable t1 = new LppRoutingTable(1);
-            t1.setRoutes("sk0", List.of(new LppShardRoute("n1", "h", 9000, "g1")));
+            t1.setShardNodes("deals.v1", 0, List.of("n1"));
             LppRoutingTable t2 = new LppRoutingTable(1);
-            t2.setRoutes("sk0", List.of(new LppShardRoute("n1", "h", 9000, "g1")));
-            t2.setRoutes("sk1", List.of(new LppShardRoute("n2", "h", 9000, "g1")));
+            t2.setShardNodes("deals.v1", 0, List.of("n1"));
+            t2.setShardNodes("deals.v1", 1, List.of("n2"));
+            assertThat(orchestrator.hasChanged(t1, t2)).isTrue();
+        }
+
+        @Test
+        void addedIndexIsDetectedAsChange() {
+            LppRoutingTable t1 = new LppRoutingTable(1);
+            t1.setShardNodes("deals.v1", 0, List.of("n1"));
+            LppRoutingTable t2 = new LppRoutingTable(1);
+            t2.setShardNodes("deals.v1", 0, List.of("n1"));
+            t2.setShardNodes("local.v2", 0, List.of("n2"));
             assertThat(orchestrator.hasChanged(t1, t2)).isTrue();
         }
 
         @Test
         void removedNodeInShardIsDetectedAsChange() {
             LppRoutingTable t1 = new LppRoutingTable(1);
-            t1.setRoutes("sk", List.of(
-                    new LppShardRoute("n1", "h", 9000, "g1"),
-                    new LppShardRoute("n2", "h", 9000, "g1")));
+            t1.setShardNodes("deals.v1", 0, List.of("n1", "n2"));
             LppRoutingTable t2 = new LppRoutingTable(1);
-            t2.setRoutes("sk", List.of(new LppShardRoute("n1", "h", 9000, "g1")));
+            t2.setShardNodes("deals.v1", 0, List.of("n1"));
             assertThat(orchestrator.hasChanged(t1, t2)).isTrue();
         }
 
         @Test
         void replacedNodeInShardIsDetectedAsChange() {
             LppRoutingTable t1 = new LppRoutingTable(1);
-            t1.setRoutes("sk", List.of(new LppShardRoute("n1", "h", 9000, "g1")));
+            t1.setShardNodes("deals.v1", 0, List.of("n1"));
             LppRoutingTable t2 = new LppRoutingTable(1);
-            t2.setRoutes("sk", List.of(new LppShardRoute("n2", "h", 9000, "g1")));
+            t2.setShardNodes("deals.v1", 0, List.of("n2"));
             assertThat(orchestrator.hasChanged(t1, t2)).isTrue();
         }
 
@@ -293,22 +293,18 @@ class LppRoutingTableOrchestratorTest {
         void orderChangeWithSameNodesIsNotChanged() {
             // hasChanged is set-based, order doesn't matter
             LppRoutingTable t1 = new LppRoutingTable(1);
-            t1.setRoutes("sk", List.of(
-                    new LppShardRoute("n1", "h", 9000, "g1"),
-                    new LppShardRoute("n2", "h", 9000, "g1")));
+            t1.setShardNodes("deals.v1", 0, List.of("n1", "n2"));
             LppRoutingTable t2 = new LppRoutingTable(1);
-            t2.setRoutes("sk", List.of(
-                    new LppShardRoute("n2", "h", 9000, "g1"),
-                    new LppShardRoute("n1", "h", 9000, "g1")));
+            t2.setShardNodes("deals.v1", 0, List.of("n2", "n1"));
             assertThat(orchestrator.hasChanged(t1, t2)).isFalse();
         }
 
         @Test
-        void emptyRouteListIsNotChanged() {
+        void emptyNodeListIsNotChanged() {
             LppRoutingTable t1 = new LppRoutingTable(1);
-            t1.setRoutes("sk", List.of());
+            t1.setShardNodes("deals.v1", 0, List.of());
             LppRoutingTable t2 = new LppRoutingTable(1);
-            t2.setRoutes("sk", List.of());
+            t2.setShardNodes("deals.v1", 0, List.of());
             assertThat(orchestrator.hasChanged(t1, t2)).isFalse();
         }
     }
@@ -337,7 +333,7 @@ class LppRoutingTableOrchestratorTest {
             String shardKey = "grocery.deals.v1.0";
 
             LppRoutingTable existing = new LppRoutingTable(5);
-            existing.setRoutes(shardKey, List.of(new LppShardRoute("old-node", "h", 9000, "g1")));
+            existing.setShardNodes("deals.v1", 0, List.of("old-node"));
             when(metadataStore.getRoutingTable()).thenReturn(Optional.of(existing));
             when(metadataStore.getAllNodeActualStates())
                     .thenReturn(Map.of("node-1", activeNode("node-1", "g1", shardKey)));
@@ -353,7 +349,7 @@ class LppRoutingTableOrchestratorTest {
             String shardKey = "grocery.deals.v1.0";
 
             LppRoutingTable existing = new LppRoutingTable(3);
-            existing.setRoutes(shardKey, List.of(new LppShardRoute("node-1", "h", 9000, "g1")));
+            existing.setShardNodes("deals.v1", 0, List.of("node-1"));
             when(metadataStore.getRoutingTable()).thenReturn(Optional.of(existing));
             when(metadataStore.getAllNodeActualStates())
                     .thenReturn(Map.of("node-1", activeNode("node-1", "g1", shardKey)));
@@ -388,7 +384,6 @@ class LppRoutingTableOrchestratorTest {
         @Test
         void fallbackUsedWhenPaNodesNotActive() {
             String shardKey = "grocery.deals.v1.0";
-            // PA has node-planned, but node-fallback (not in PA) is the one that's active
             when(metadataStore.getAllNodeActualStates()).thenReturn(Map.of(
                     "node-planned", nodeWithShardState("node-planned", "g1", shardKey, "DOWNLOADING"),
                     "node-fallback", activeNode("node-fallback", "g2", shardKey)
@@ -398,40 +393,38 @@ class LppRoutingTableOrchestratorTest {
 
             ArgumentCaptor<LppRoutingTable> captor = ArgumentCaptor.forClass(LppRoutingTable.class);
             verify(metadataStore).putRoutingTable(captor.capture());
-            List<LppShardRoute> routes = captor.getValue().getShardRoutes().get(shardKey);
-            assertThat(routes).hasSize(1);
-            assertThat(routes.get(0).getNodeName()).isEqualTo("node-fallback");
+            List<String> nodes = captor.getValue().getRoutes().get("deals.v1").get("0");
+            assertThat(nodes).containsExactly("node-fallback");
         }
     }
 
     // =========================================================================
-    // resolveRoutes — edge cases
+    // resolveNodes — edge cases
     // =========================================================================
 
     @Nested
-    class ResolveRoutes {
+    class ResolveNodes {
 
         @Test
-        void emptyPaAndEmptyAaProducesEmptyRoutes() {
+        void emptyPaAndEmptyAaProducesEmptyList() {
             LppShardPlannedAllocation alloc = allocWithNodes("sk", List.of());
-            List<LppShardRoute> routes = orchestrator.resolveRoutes("sk", alloc, Map.of());
-            assertThat(routes).isEmpty();
+            List<String> nodes = orchestrator.resolveNodes("sk", alloc, Map.of());
+            assertThat(nodes).isEmpty();
         }
 
         @Test
-        void onlyPaNodeNotInAaProducesEmptyRoutes() {
+        void onlyPaNodeNotInAaProducesEmptyList() {
             LppShardPlannedAllocation alloc = allocWithNodes("sk", List.of("node-1"));
-            List<LppShardRoute> routes = orchestrator.resolveRoutes("sk", alloc, Map.of());
-            assertThat(routes).isEmpty();
+            List<String> nodes = orchestrator.resolveNodes("sk", alloc, Map.of());
+            assertThat(nodes).isEmpty();
         }
 
         @Test
         void paNodeActiveForDifferentShardDoesNotRoute() {
             LppShardPlannedAllocation alloc = allocWithNodes("sk.0", List.of("node-1"));
-            // node-1 is ACTIVE for shard 1, not shard 0
             LppNodeActualState state = activeNode("node-1", "g1", "sk.1");
-            List<LppShardRoute> routes = orchestrator.resolveRoutes("sk.0", alloc, Map.of("node-1", state));
-            assertThat(routes).isEmpty();
+            List<String> nodes = orchestrator.resolveNodes("sk.0", alloc, Map.of("node-1", state));
+            assertThat(nodes).isEmpty();
         }
 
         @Test
@@ -447,9 +440,8 @@ class LppRoutingTableOrchestratorTest {
                     shardState(sk1, "ACTIVE")
             ));
 
-            List<LppShardRoute> routes = orchestrator.resolveRoutes(sk0, alloc, Map.of("node-multi", state));
-            assertThat(routes).hasSize(1);
-            assertThat(routes.get(0).getNodeName()).isEqualTo("node-multi");
+            List<String> nodes = orchestrator.resolveNodes(sk0, alloc, Map.of("node-multi", state));
+            assertThat(nodes).containsExactly("node-multi");
         }
 
         @Test
@@ -458,8 +450,19 @@ class LppRoutingTableOrchestratorTest {
             LppShardPlannedAllocation alloc = allocWithNodes(shardKey, List.of("node-failed"));
             LppNodeActualState state = nodeWithShardState("node-failed", "g1", shardKey, "FAILED");
 
-            List<LppShardRoute> routes = orchestrator.resolveRoutes(shardKey, alloc, Map.of("node-failed", state));
-            assertThat(routes).isEmpty();
+            List<String> nodes = orchestrator.resolveNodes(shardKey, alloc, Map.of("node-failed", state));
+            assertThat(nodes).isEmpty();
+        }
+
+        @Test
+        void primaryReturnsOnlyNodeNamesNotMetadata() {
+            String shardKey = "grocery.deals.v1.0";
+            LppShardPlannedAllocation alloc = allocWithNodes(shardKey, List.of("node-1", "node-2"));
+            LppNodeActualState s1 = activeNode("node-1", "g1", shardKey);
+            LppNodeActualState s2 = activeNode("node-2", "g1", shardKey);
+
+            List<String> nodes = orchestrator.resolveNodes(shardKey, alloc, Map.of("node-1", s1, "node-2", s2));
+            assertThat(nodes).containsExactlyInAnyOrder("node-1", "node-2");
         }
     }
 
@@ -467,7 +470,6 @@ class LppRoutingTableOrchestratorTest {
     // Helpers
     // =========================================================================
 
-    /** Build a PA map with a single shard key and the given node names. */
     private Map<String, LppShardPlannedAllocation> paWithNodes(String shardKey, String... nodeNames) {
         LppShardPlannedAllocation alloc = allocWithNodes(shardKey, List.of(nodeNames));
         return Map.of(shardKey, alloc);
@@ -492,7 +494,6 @@ class LppRoutingTableOrchestratorTest {
         return new LppShardEntry("col", shardKey, shardKey, 0);
     }
 
-    /** Fresh, ACTIVE node with the given shard key marked ACTIVE. */
     private LppNodeActualState activeNode(String nodeName, String grailShardId, String shardKey) {
         LppNodeActualState state = new LppNodeActualState(nodeName, "oi", grailShardId, "INGEST", "zone-a");
         state.setHeartbeatTimestampMs(System.currentTimeMillis());
@@ -500,7 +501,6 @@ class LppRoutingTableOrchestratorTest {
         return state;
     }
 
-    /** Fresh node with a single shard in the given state. */
     private LppNodeActualState nodeWithShardState(String nodeName, String grailShardId, String shardKey, String state) {
         LppNodeActualState as = new LppNodeActualState(nodeName, "oi", grailShardId, "INGEST", "zone-a");
         as.setHeartbeatTimestampMs(System.currentTimeMillis());

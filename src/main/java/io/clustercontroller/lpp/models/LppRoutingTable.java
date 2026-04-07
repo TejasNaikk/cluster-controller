@@ -10,26 +10,33 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Routing table goal state written by the controller and consumed by the LPP gateway.
+ * Routing table written by the controller and consumed by the LPP search gateway.
  *
- * <p>Stored at /lpp/{env}/routing/goal-state.
+ * <p>Stored at /lpp/search-gateway/{env}/{region}/routing-table.
  *
- * <p>The routing decision for each shard:
- * <ol>
- *   <li>PA ∩ AA: nodes that are both planned (in PA) AND actively serving the shard
- *       (shard state == ACTIVE, fresh heartbeat). PA is the source of truth.</li>
- *   <li>Fallback: if the intersection is empty (e.g. mid-migration), fall back to ALL
- *       nodes that have the shard ACTIVE with a fresh heartbeat, regardless of PA.
- *       This prevents a dark shard during handoff.</li>
- * </ol>
+ * <p>Structure:
+ * <pre>
+ * {
+ *   "version": 5,
+ *   "last_updated_ms": 1234567890,
+ *   "index_shard_routing": {
+ *     "deals_index.v1": {
+ *       "0": ["node-a", "node-b"],
+ *       "1": ["node-c", "node-d"]
+ *     },
+ *     "local_index.v1": { ... }
+ *   }
+ * }
+ * </pre>
  *
- * <p>The {@code version} monotonically increments on each change to the table content.
+ * <p>Key is fullIndexName (e.g. "deals_index.v1"), sub-key is shardId as string,
+ * value is the list of node names routable for that shard (PA ∩ AA, or fallback).
  */
 @Data
 @NoArgsConstructor
 public class LppRoutingTable {
 
-    /** Monotonically increasing version, bumped each time the routing table content changes. */
+    /** Monotonically increasing version, bumped each time routing table content changes. */
     @JsonProperty("version")
     private long version;
 
@@ -37,22 +44,24 @@ public class LppRoutingTable {
     private long lastUpdatedMs;
 
     /**
-     * Map from shardKey → list of routable nodes for that shard.
-     * shardKey = "{collection}.{fullIndexName}.{shardId}"
+     * routes: fullIndexName → { shardId → [nodeName, ...] }
      */
-    @JsonProperty("shard_routes")
-    private Map<String, List<LppShardRoute>> shardRoutes = new LinkedHashMap<>();
+    @JsonProperty("index_shard_routing")
+    private Map<String, Map<String, List<String>>> routes = new LinkedHashMap<>();
 
     public LppRoutingTable(long version) {
         this.version = version;
         this.lastUpdatedMs = System.currentTimeMillis();
     }
 
-    public void addRoute(String shardKey, LppShardRoute route) {
-        shardRoutes.computeIfAbsent(shardKey, k -> new ArrayList<>()).add(route);
+    public void addNode(String fullIndexName, int shardId, String nodeName) {
+        routes.computeIfAbsent(fullIndexName, k -> new LinkedHashMap<>())
+              .computeIfAbsent(String.valueOf(shardId), k -> new ArrayList<>())
+              .add(nodeName);
     }
 
-    public void setRoutes(String shardKey, List<LppShardRoute> routes) {
-        shardRoutes.put(shardKey, routes);
+    public void setShardNodes(String fullIndexName, int shardId, List<String> nodes) {
+        routes.computeIfAbsent(fullIndexName, k -> new LinkedHashMap<>())
+              .put(String.valueOf(shardId), nodes);
     }
 }
