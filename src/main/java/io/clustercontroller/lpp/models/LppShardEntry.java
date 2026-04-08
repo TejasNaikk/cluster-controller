@@ -47,9 +47,9 @@ public class LppShardEntry {
         this.shardId = shardId;
     }
 
-    /** Canonical key: collection.fullIndexName.shardId — e.g. "grocery.local_index.1.3" */
+    /** Canonical key: fullIndexName/shardId — e.g. "local_index.2025_01_24/3" */
     @JsonIgnore
     public String getKey() {
-        return collection + "." + fullIndexName + "." + shardId;
+        return fullIndexName + "/" + shardId;
     }
 }

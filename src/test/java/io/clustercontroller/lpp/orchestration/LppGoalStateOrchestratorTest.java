@@ -55,7 +55,7 @@ class LppGoalStateOrchestratorTest {
         // Actual state: the shard is ACTIVE — node is fully converged
         LppNodeActualState actual = new LppNodeActualState("node-1", "odin-inst", "sg0", "INGEST", "zone-a");
         LppShardActualState shardActual = new LppShardActualState();
-        shardActual.setShardKey("grocery.local_index.1.0");
+        shardActual.setShardKey("local_index.1/0");
         shardActual.setState("ACTIVE");
         actual.setShardStates(List.of(shardActual));
         when(metadataStore.getNodeActualState("node-1")).thenReturn(Optional.of(actual));

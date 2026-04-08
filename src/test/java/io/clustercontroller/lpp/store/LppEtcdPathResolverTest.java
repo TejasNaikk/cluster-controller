@@ -28,14 +28,14 @@ class LppEtcdPathResolverTest {
 
     @Test
     void shardPlannedAllocationPath() {
-        assertThat(resolver.shardPlannedAllocationPath("grocery.local_index.0"))
-                .isEqualTo("/lpp/dca/shards/grocery.local_index.0/planned-allocation");
+        assertThat(resolver.shardPlannedAllocationPath("local_index.1/0"))
+                .isEqualTo("/lpp/dca/shards/local_index.1/0/planned-allocation");
     }
 
     @Test
     void shardCapacityPath() {
-        assertThat(resolver.shardCapacityPath("grocery.local_index.0"))
-                .isEqualTo("/lpp/dca/shards/grocery.local_index.0/capacity");
+        assertThat(resolver.shardCapacityPath("local_index.1/0"))
+                .isEqualTo("/lpp/dca/shards/local_index.1/0/capacity");
     }
 
     @Test

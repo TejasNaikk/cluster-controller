@@ -10,8 +10,8 @@ import java.nio.file.Paths;
  * /lpp/{region}/
  *   nodes/{nodeName}/actual-state    ← node reports here (or Grail-derived)
  *   nodes/{nodeName}/goal-state      ← controller writes manifest here
- *   shards/{shardKey}/planned-allocation  ← controller's shard placement plan
- *   shards/{shardKey}/capacity       ← desired capacity for this shard
+ *   shards/{fullIndexName}/{shardId}/planned-allocation  ← controller's shard placement plan
+ *   shards/{fullIndexName}/{shardId}/capacity       ← desired capacity for this shard
  *   groups/{groupId}/conf            ← group (odin instance) definition
  *   groups/{groupId}/state           ← group state (capacity, health)
  *   indices/{indexKey}/conf          ← index definition (numShards, numGroups, role)

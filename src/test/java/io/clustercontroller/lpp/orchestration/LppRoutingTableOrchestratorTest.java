@@ -48,7 +48,7 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void primaryPathNodeInPaAndActive() {
-            String shardKey = "grocery.deals.v1.0";
+            String shardKey = "deals.v1/0";
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-1");
             Map<String, LppNodeActualState> aa = Map.of("node-1", activeNode("node-1", "g1", shardKey));
 
@@ -60,7 +60,7 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void primaryPathMultipleNodesInPaAllActive() {
-            String shardKey = "grocery.deals.v1.0";
+            String shardKey = "deals.v1/0";
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-1", "node-2", "node-3");
             Map<String, LppNodeActualState> aa = Map.of(
                     "node-1", activeNode("node-1", "g1", shardKey),
@@ -76,8 +76,7 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void primaryPathExcludesNodeNotYetActive() {
-            // node-1 in PA and ACTIVE, node-2 in PA but PENDING (not yet active)
-            String shardKey = "grocery.deals.v1.0";
+            String shardKey = "deals.v1/0";
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-1", "node-2");
             Map<String, LppNodeActualState> aa = Map.of(
                     "node-1", activeNode("node-1", "g1", shardKey),
@@ -92,26 +91,23 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void primaryPathExcludesNodeWithNoActualState() {
-            // node-1 in PA but no actual state in etcd (not yet discovered)
-            String shardKey = "grocery.deals.v1.0";
+            String shardKey = "deals.v1/0";
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-1");
             Map<String, LppNodeActualState> aa = Map.of();
 
             LppRoutingTable table = orchestrator.buildRoutingTable(pa, aa, 0);
 
-            // Falls through to fallback — empty because no node is ACTIVE anywhere
             List<String> nodes = table.getRoutes().get("deals.v1").get("0");
             assertThat(nodes).isEmpty();
         }
 
         @Test
         void fallbackActivatesWhenPaIntersectionEmpty() {
-            // PA has node-1 (not yet active), but node-2 (not in PA) is already ACTIVE
-            String shardKey = "grocery.deals.v1.0";
+            String shardKey = "deals.v1/0";
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-1");
             Map<String, LppNodeActualState> aa = Map.of(
                     "node-1", nodeWithShardState("node-1", "g1", shardKey, "DOWNLOADING"),
-                    "node-2", activeNode("node-2", "g2", shardKey) // not in PA
+                    "node-2", activeNode("node-2", "g2", shardKey)
             );
 
             LppRoutingTable table = orchestrator.buildRoutingTable(pa, aa, 0);
@@ -122,7 +118,7 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void fallbackPicksMultipleActiveNodesNotInPa() {
-            String shardKey = "grocery.deals.v1.0";
+            String shardKey = "deals.v1/0";
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-new");
             Map<String, LppNodeActualState> aa = Map.of(
                     "node-new", nodeWithShardState("node-new", "g2", shardKey, "DOWNLOADING"),
@@ -138,7 +134,7 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void staleNodesExcludedFromPrimaryPath() {
-            String shardKey = "grocery.deals.v1.0";
+            String shardKey = "deals.v1/0";
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-stale");
             LppNodeActualState stale = activeNode("node-stale", "g1", shardKey);
             stale.setHeartbeatTimestampMs(0L);
@@ -151,7 +147,7 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void staleNodesExcludedFromFallback() {
-            String shardKey = "grocery.deals.v1.0";
+            String shardKey = "deals.v1/0";
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey, "node-planned");
             LppNodeActualState stale = activeNode("node-stale", "g2", shardKey);
             stale.setHeartbeatTimestampMs(0L);
@@ -169,10 +165,9 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void nodeWithDifferentShardActiveDoesNotCountForThisShard() {
-            String shardKey0 = "grocery.deals.v1.0";
-            String shardKey1 = "grocery.deals.v1.1";
+            String shardKey0 = "deals.v1/0";
+            String shardKey1 = "deals.v1/1";
             Map<String, LppShardPlannedAllocation> pa = paWithNodes(shardKey0, "node-1");
-            // node-1 has shard 1 ACTIVE, but not shard 0
             Map<String, LppNodeActualState> aa = Map.of("node-1", activeNode("node-1", "g1", shardKey1));
 
             LppRoutingTable table = orchestrator.buildRoutingTable(pa, aa, 0);
@@ -183,8 +178,8 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void multipleShardsOfSameIndexMappedIndependently() {
-            String sk0 = "grocery.deals.v1.0";
-            String sk1 = "grocery.deals.v1.1";
+            String sk0 = "deals.v1/0";
+            String sk1 = "deals.v1/1";
             Map<String, LppShardPlannedAllocation> pa = new LinkedHashMap<>();
             pa.putAll(paWithNodes(sk0, "node-a"));
             pa.putAll(paWithNodes(sk1, "node-b"));
@@ -204,8 +199,8 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void multipleIndicesMappedSeparately() {
-            String sk0 = "grocery.deals.v1.0";
-            String sk1 = "grocery.local.v2.0";
+            String sk0 = "deals.v1/0";
+            String sk1 = "local.v2/0";
             Map<String, LppShardPlannedAllocation> pa = new LinkedHashMap<>();
             pa.putAll(paWithNodes(sk0, "node-a"));
             pa.putAll(paWithNodes(sk1, "node-b"));
@@ -318,7 +313,7 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void writesToEtcdOnFirstRun() {
-            String shardKey = "grocery.deals.v1.0";
+            String shardKey = "deals.v1/0";
             when(metadataStore.getAllNodeActualStates())
                     .thenReturn(Map.of("node-1", activeNode("node-1", "g1", shardKey)));
 
@@ -330,7 +325,7 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void versionIncrementsWhenTableChanges() {
-            String shardKey = "grocery.deals.v1.0";
+            String shardKey = "deals.v1/0";
 
             LppRoutingTable existing = new LppRoutingTable(5);
             existing.setShardNodes("deals.v1", 0, List.of("old-node"));
@@ -346,7 +341,7 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void noWriteWhenTableUnchanged() {
-            String shardKey = "grocery.deals.v1.0";
+            String shardKey = "deals.v1/0";
 
             LppRoutingTable existing = new LppRoutingTable(3);
             existing.setShardNodes("deals.v1", 0, List.of("node-1"));
@@ -383,7 +378,7 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void fallbackUsedWhenPaNodesNotActive() {
-            String shardKey = "grocery.deals.v1.0";
+            String shardKey = "deals.v1/0";
             when(metadataStore.getAllNodeActualStates()).thenReturn(Map.of(
                     "node-planned", nodeWithShardState("node-planned", "g1", shardKey, "DOWNLOADING"),
                     "node-fallback", activeNode("node-fallback", "g2", shardKey)
@@ -407,30 +402,30 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void emptyPaAndEmptyAaProducesEmptyList() {
-            LppShardPlannedAllocation alloc = allocWithNodes("sk", List.of());
-            List<String> nodes = orchestrator.resolveNodes("sk", alloc, Map.of());
+            LppShardPlannedAllocation alloc = allocWithNodes("idx/0", List.of());
+            List<String> nodes = orchestrator.resolveNodes("idx/0", alloc, Map.of());
             assertThat(nodes).isEmpty();
         }
 
         @Test
         void onlyPaNodeNotInAaProducesEmptyList() {
-            LppShardPlannedAllocation alloc = allocWithNodes("sk", List.of("node-1"));
-            List<String> nodes = orchestrator.resolveNodes("sk", alloc, Map.of());
+            LppShardPlannedAllocation alloc = allocWithNodes("idx/0", List.of("node-1"));
+            List<String> nodes = orchestrator.resolveNodes("idx/0", alloc, Map.of());
             assertThat(nodes).isEmpty();
         }
 
         @Test
         void paNodeActiveForDifferentShardDoesNotRoute() {
-            LppShardPlannedAllocation alloc = allocWithNodes("sk.0", List.of("node-1"));
-            LppNodeActualState state = activeNode("node-1", "g1", "sk.1");
-            List<String> nodes = orchestrator.resolveNodes("sk.0", alloc, Map.of("node-1", state));
+            LppShardPlannedAllocation alloc = allocWithNodes("idx/0", List.of("node-1"));
+            LppNodeActualState state = activeNode("node-1", "g1", "idx/1");
+            List<String> nodes = orchestrator.resolveNodes("idx/0", alloc, Map.of("node-1", state));
             assertThat(nodes).isEmpty();
         }
 
         @Test
         void nodeWithMultipleShardStatesOnlyMatchesCorrectShard() {
-            String sk0 = "grocery.idx.0";
-            String sk1 = "grocery.idx.1";
+            String sk0 = "idx/0";
+            String sk1 = "idx/1";
             LppShardPlannedAllocation alloc = allocWithNodes(sk0, List.of("node-multi"));
 
             LppNodeActualState state = new LppNodeActualState("node-multi", "oi", "g1", "INGEST", "zone-a");
@@ -446,7 +441,7 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void failedShardStateDoesNotRoute() {
-            String shardKey = "grocery.idx.0";
+            String shardKey = "idx/0";
             LppShardPlannedAllocation alloc = allocWithNodes(shardKey, List.of("node-failed"));
             LppNodeActualState state = nodeWithShardState("node-failed", "g1", shardKey, "FAILED");
 
@@ -456,7 +451,7 @@ class LppRoutingTableOrchestratorTest {
 
         @Test
         void primaryReturnsOnlyNodeNamesNotMetadata() {
-            String shardKey = "grocery.deals.v1.0";
+            String shardKey = "deals.v1/0";
             LppShardPlannedAllocation alloc = allocWithNodes(shardKey, List.of("node-1", "node-2"));
             LppNodeActualState s1 = activeNode("node-1", "g1", shardKey);
             LppNodeActualState s2 = activeNode("node-2", "g1", shardKey);
@@ -482,14 +477,13 @@ class LppRoutingTableOrchestratorTest {
         return alloc;
     }
 
-    /** Parse a shardKey of the form "collection.fullIndex.shardId" */
+    /** Parse a shardKey in the new format: "fullIndexName/shardId" e.g. "deals.v1/0" */
     private LppShardEntry shardEntryFromKey(String shardKey) {
-        String[] parts = shardKey.split("\\.");
-        if (parts.length >= 3) {
-            int shardId = Integer.parseInt(parts[parts.length - 1]);
-            String collection = parts[0];
-            String fullIndex = String.join(".", Arrays.copyOfRange(parts, 1, parts.length - 1));
-            return new LppShardEntry(collection, fullIndex, fullIndex, shardId);
+        int slashIdx = shardKey.lastIndexOf('/');
+        if (slashIdx > 0) {
+            String fullIndex = shardKey.substring(0, slashIdx);
+            int shardId = Integer.parseInt(shardKey.substring(slashIdx + 1));
+            return new LppShardEntry("col", fullIndex, fullIndex, shardId);
         }
         return new LppShardEntry("col", shardKey, shardKey, 0);
     }
