@@ -30,10 +30,13 @@ public class LppRoutingTableTask {
             LppRoutingTable table = ctx.getRoutingTableOrchestrator()
                     .computeAndPersist(ctx.getCurrentAllocations());
 
-            int routableShards = (int) table.getShardRoutes().values().stream()
-                    .filter(routes -> !routes.isEmpty())
+            int totalShards = table.getRoutes().values().stream()
+                    .mapToInt(shards -> shards.size())
+                    .sum();
+            int routableShards = (int) table.getRoutes().values().stream()
+                    .flatMap(shards -> shards.values().stream())
+                    .filter(nodes -> !nodes.isEmpty())
                     .count();
-            int totalShards = table.getShardRoutes().size();
 
             log.info("LPP routing table task: version={}, {}/{} shards have routes",
                     table.getVersion(), routableShards, totalShards);
