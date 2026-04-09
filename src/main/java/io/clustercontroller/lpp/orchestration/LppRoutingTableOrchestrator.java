@@ -118,7 +118,11 @@ public class LppRoutingTableOrchestrator {
             LppShardPlannedAllocation alloc,
             Map<String, LppNodeActualState> allActualStates) {
 
-        Set<String> paNodes = new HashSet<>(alloc.getAssignedNodeNames());
+        // Use searcher-specific nodes if available; fall back to combined list for legacy PAs
+        List<String> searcherNodes = alloc.getAssignedSearcherNodeNames();
+        Set<String> paNodes = new HashSet<>(searcherNodes.isEmpty()
+                ? alloc.getAssignedNodeNames()
+                : searcherNodes);
 
         // Primary: PA ∩ AA
         List<String> primary = paNodes.stream()
@@ -133,11 +137,13 @@ public class LppRoutingTableOrchestrator {
             return primary;
         }
 
-        // Fallback: any ACTIVE+fresh node for this shard
-        log.info("LPP routing: {}/{} PA∩AA empty — fallback to all ACTIVE nodes",
+        // Fallback: any ACTIVE+fresh searcher node for this shard
+        log.info("LPP routing: {}/{} PA∩AA empty — fallback to all ACTIVE searcher nodes",
                 alloc.getFullIndexName(), alloc.getShardId());
 
+        Set<String> searcherNodeSet = new HashSet<>(searcherNodes);
         return allActualStates.values().stream()
+                .filter(state -> searcherNodeSet.isEmpty() || searcherNodeSet.contains(state.getNodeName()))
                 .filter(state -> !state.isStale(LppConstants.STALE_NODE_TIMEOUT_MS))
                 .filter(state -> isShardActive(state, shardKey))
                 .map(LppNodeActualState::getNodeName)
