@@ -356,6 +356,32 @@ class LppGoalStateOrchestratorTest {
         assertThat(desired.get("node1-searcher").getRole()).isEqualTo("searcher");
     }
 
+    // ---- orphan cleanup when allocations are empty ----
+
+    @Test
+    void orphanGoalStateCleanedUpEvenWhenAllocationsAreEmpty() {
+        // Previously, an early return prevented cleanup when allocations were empty.
+        // This verifies that stale goal states are deleted even after all indices are removed.
+        LppNodeGoalState staleGs = new LppNodeGoalState("dead-node", "ingester", "local");
+        when(metadataStore.getAllNodeGoalStates()).thenReturn(Map.of("dead-node", staleGs));
+
+        // No live nodes, no allocations
+        orchestrator.orchestrate(Map.of(), Map.of(), "local");
+
+        verify(metadataStore).deleteNodeGoalState("dead-node");
+    }
+
+    @Test
+    void emptyAllocationsWithLiveNodesProducesNoGoalStatePushes() {
+        when(metadataStore.getAllNodeGoalStates()).thenReturn(Map.of());
+
+        Map<String, LppGroup> groups = groupsWithNodes("g1", List.of("node1"));
+        List<String> updated = orchestrator.orchestrate(Map.of(), groups, "local");
+
+        assertThat(updated).isEmpty();
+        verify(metadataStore, never()).putNodeGoalState(any());
+    }
+
     // ---- helper builders ----
 
     private Map<String, LppGroup> ingesterGroupsWithNodes(String groupId, List<String> nodeNames) {

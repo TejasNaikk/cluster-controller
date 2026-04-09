@@ -65,16 +65,14 @@ public class LppGoalStateOrchestrator {
             Map<String, LppGroup> searchGroups,
             String region) {
 
-        if (allocations.isEmpty()) {
-            log.debug("LPP orchestrator: no allocations, nothing to do");
-            return List.of();
-        }
-
         // Combined view of all live nodes for orphan detection and rollout cap
         Map<String, LppGroup> allGroups = new LinkedHashMap<>(ingestGroups);
         allGroups.putAll(searchGroups);
 
-        Map<String, LppNodeGoalState> desired = buildDesiredGoalStates(allocations, ingestGroups, searchGroups, region);
+        // Build desired goal states (empty map if no allocations — orphan cleanup still runs)
+        Map<String, LppNodeGoalState> desired = allocations.isEmpty()
+                ? Map.of()
+                : buildDesiredGoalStates(allocations, ingestGroups, searchGroups, region);
 
         // Clean up orphaned goal states for nodes no longer in any live group
         Map<String, LppNodeGoalState> allExistingGoalStates = metadataStore.getAllNodeGoalStates();
