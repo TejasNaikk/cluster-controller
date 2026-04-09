@@ -24,7 +24,8 @@ public final class LppConstants {
 
     // Defaults
     public static final int DEFAULT_REPLICA_COUNT = 3;
-    public static final long STALE_NODE_TIMEOUT_MS = 10 * 60 * 1000L; // 10 minutes
+    // Configurable via -Dlpp.staleNodeTimeoutMs (default 10 min)
+    public static final long STALE_NODE_TIMEOUT_MS = Long.getLong("lpp.staleNodeTimeoutMs", 10 * 60 * 1000L);
 
     // Roles (mirrors LucenePlusRole in the data plane)
     public static final String ROLE_INGEST = "INGEST";
