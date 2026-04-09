@@ -221,6 +221,42 @@ class LppActualStateDiscoveryTaskTest {
         verify(metadataStore, never()).deleteNodeActualState("live-ingester");
     }
 
+    // ---- ingester/searcher peer validation ----
+
+    @Test
+    void searcherWithNoIngesterPeerIsExcluded() {
+        // 1 ingester (node 0) + 2 searchers (node 0 and node 1) — searcher-1 has no ingester-1 peer
+        when(metadataStore.getAllNodeActualStates()).thenReturn(Map.of(
+                "node-g1-ingester-0", liveState("node-g1-ingester-0", "ingester", "group1"),
+                "node-g1-searcher-0", liveState("node-g1-searcher-0", "searcher", "group1"),
+                "node-g1-searcher-1", liveState("node-g1-searcher-1", "searcher", "group1")
+        ));
+
+        new LppActualStateDiscoveryTask(ctx).execute();
+
+        // searcher-0 has peer ingester-0 → kept
+        // searcher-1 has no peer ingester-1 → excluded
+        assertThat(ctx.getCurrentSearchGroups().get("group1").getNodes())
+                .extracting(LppNode::getNodeName)
+                .containsExactly("node-g1-searcher-0")
+                .doesNotContain("node-g1-searcher-1");
+    }
+
+    @Test
+    void equalIngesterAndSearcherCountAllKept() {
+        when(metadataStore.getAllNodeActualStates()).thenReturn(Map.of(
+                "node-g1-ingester-0", liveState("node-g1-ingester-0", "ingester", "group1"),
+                "node-g1-ingester-1", liveState("node-g1-ingester-1", "ingester", "group1"),
+                "node-g1-searcher-0", liveState("node-g1-searcher-0", "searcher", "group1"),
+                "node-g1-searcher-1", liveState("node-g1-searcher-1", "searcher", "group1")
+        ));
+
+        new LppActualStateDiscoveryTask(ctx).execute();
+
+        assertThat(ctx.getCurrentIngestGroups().get("group1").getNodes()).hasSize(2);
+        assertThat(ctx.getCurrentSearchGroups().get("group1").getNodes()).hasSize(2);
+    }
+
     // -------------------------------------------------------------------------
 
     private LppNodeActualState liveState(String nodeName, String role, String groupId) {

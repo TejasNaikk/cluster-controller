@@ -91,6 +91,32 @@ public class LppActualStateDiscoveryTask {
                 cleanupStaleNodes(staleNodes, store);
             }
 
+            // Validate: each group must have at least as many ingesters as searchers.
+            // Ingester-N and searcher-N are co-located containers on the same physical node.
+            // A searcher-N with no ingester-N peer can never converge — exclude it.
+            for (String groupId : searchGroups.keySet()) {
+                LppGroup searchGroup = searchGroups.get(groupId);
+                LppGroup ingestGroup = ingestGroups.get(groupId);
+                int ingesterCount = ingestGroup != null ? ingestGroup.getNodes().size() : 0;
+                int searcherCount = searchGroup.getNodes().size();
+                if (searcherCount > ingesterCount) {
+                    log.warn("LPP discovery: group {} has {} searcher(s) but only {} ingester(s) — " +
+                             "searchers beyond index {} have no ingester peer and will be excluded",
+                            groupId, searcherCount, ingesterCount, ingesterCount - 1);
+                    // Remove excess searchers (those whose peer ingester-N doesn't exist)
+                    searchGroup.getNodes().removeIf(n -> {
+                        String peer = n.getNodeName().replace("-searcher-", "-ingester-");
+                        boolean hasPeer = ingestGroup != null &&
+                                ingestGroup.getNodes().stream().anyMatch(in -> in.getNodeName().equals(peer));
+                        if (!hasPeer) {
+                            log.warn("LPP discovery: excluding searcher {} — no ingester peer {} in group {}",
+                                    n.getNodeName(), peer, groupId);
+                        }
+                        return !hasPeer;
+                    });
+                }
+            }
+
             ctx.setCurrentIngestGroups(ingestGroups);
             ctx.setCurrentSearchGroups(searchGroups);
 
