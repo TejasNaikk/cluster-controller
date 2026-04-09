@@ -21,11 +21,8 @@ public class LppOrchestrationTask {
 
     public String execute() {
         try {
-            if (ctx.getCurrentAllocations().isEmpty()) {
-                log.debug("LPP orchestration task: no allocations to push");
-                return "SKIPPED";
-            }
-
+            // Always run orchestration even with empty allocations so orphaned goal-states
+            // from previously registered indices get cleaned up.
             List<String> updated = ctx.getOrchestrator().orchestrate(
                     ctx.getCurrentAllocations(),
                     ctx.getCurrentGroups(),

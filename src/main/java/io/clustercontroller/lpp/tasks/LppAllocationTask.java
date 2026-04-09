@@ -32,7 +32,8 @@ public class LppAllocationTask {
 
             List<LppIndexDefinition> indices = ctx.loadIndexDefinitions();
             if (indices.isEmpty()) {
-                log.warn("LPP allocation task: no index definitions registered, skipping");
+                log.warn("LPP allocation task: no index definitions registered, clearing allocations");
+                ctx.setCurrentAllocations(Map.of());
                 return "SKIPPED";
             }
 
