@@ -273,9 +273,144 @@ class LppGoalStateOrchestratorTest {
         verify(metadataStore, never()).deleteNodeGoalState(any());
     }
 
-    // -------------------------------------------------------------------------
+    // ---- searcher dependency gate ----
 
-    /** Allocation with nodes from a single named group, shard 0 of grocery/local_index. */
+    @Test
+    void searcherNodeDeferredWhenIngesterPeerHasNoActualState() {
+        // Setup: ingester-1 and searcher-1 in separate role groups
+        Map<String, LppGroup> ingestGroups = ingesterGroupsWithNodes("g1", List.of("node1-ingester"));
+        Map<String, LppGroup> searchGroups = searcherGroupsWithNodes("g1", List.of("node1-searcher"));
+        Map<String, LppShardPlannedAllocation> allocations = roleAwareAllocations(
+                List.of("node1-ingester"), List.of("node1-searcher"), "g1");
+
+        // Ingester peer has no actual state yet
+        when(metadataStore.getNodeActualState("node1-ingester")).thenReturn(Optional.empty());
+
+        List<String> updated = orchestrator.orchestrate(allocations, ingestGroups, searchGroups, "local");
+
+        // Ingester should get its goal state, searcher deferred
+        assertThat(updated).contains("node1-ingester");
+        assertThat(updated).doesNotContain("node1-searcher");
+    }
+
+    @Test
+    void searcherNodeDeferredWhenIngesterPeerShardNotActive() {
+        Map<String, LppGroup> ingestGroups = ingesterGroupsWithNodes("g1", List.of("node1-ingester"));
+        Map<String, LppGroup> searchGroups = searcherGroupsWithNodes("g1", List.of("node1-searcher"));
+        Map<String, LppShardPlannedAllocation> allocations = roleAwareAllocations(
+                List.of("node1-ingester"), List.of("node1-searcher"), "g1");
+
+        // Ingester has actual state but shard is DOWNLOADING, not ACTIVE
+        LppNodeActualState ingesterActual = actualStateWith("node1-ingester", "local_index.1/0", "DOWNLOADING");
+        when(metadataStore.getNodeActualState("node1-ingester")).thenReturn(Optional.of(ingesterActual));
+
+        List<String> updated = orchestrator.orchestrate(allocations, ingestGroups, searchGroups, "local");
+
+        assertThat(updated).doesNotContain("node1-searcher");
+    }
+
+    @Test
+    void searcherNodeProceedsWhenIngesterPeerShardIsActive() {
+        Map<String, LppGroup> ingestGroups = ingesterGroupsWithNodes("g1", List.of("node1-ingester"));
+        Map<String, LppGroup> searchGroups = searcherGroupsWithNodes("g1", List.of("node1-searcher"));
+        Map<String, LppShardPlannedAllocation> allocations = roleAwareAllocations(
+                List.of("node1-ingester"), List.of("node1-searcher"), "g1");
+
+        // Ingester is fully converged — mark it as already having the goal state + ACTIVE
+        LppNodeGoalState ingesterGs = new LppNodeGoalState("node1-ingester", "ingester", "local");
+        ingesterGs.addShard(new LppShardEntry("grocery", "local_index", "local_index.1", 0));
+        when(metadataStore.getNodeGoalState("node1-ingester")).thenReturn(Optional.of(ingesterGs));
+        LppNodeActualState ingesterActual = actualStateWith("node1-ingester", "local_index.1/0", "ACTIVE");
+        when(metadataStore.getNodeActualState("node1-ingester")).thenReturn(Optional.of(ingesterActual));
+
+        List<String> updated = orchestrator.orchestrate(allocations, ingestGroups, searchGroups, "local");
+
+        // Searcher should be pushed now that ingester is ACTIVE
+        assertThat(updated).contains("node1-searcher");
+    }
+
+    @Test
+    void ingesterNodesProcessNormallyWithoutDependencyCheck() {
+        Map<String, LppGroup> ingestGroups = ingesterGroupsWithNodes("g1", List.of("node1-ingester", "node2-ingester", "node3-ingester"));
+        Map<String, LppShardPlannedAllocation> allocations = roleAwareIngestOnlyAllocations(
+                List.of("node1-ingester", "node2-ingester", "node3-ingester"), "g1");
+
+        // No actual state needed for ingesters — they proceed freely
+        List<String> updated = orchestrator.orchestrate(allocations, ingestGroups, Map.of(), "local");
+
+        // 20% of 3 = ceil(0.6) = 1 ingester updated (no searcher dependency check)
+        assertThat(updated).hasSize(1);
+    }
+
+    @Test
+    void roleAwareDesiredGoalStatesAssignCorrectRoles() {
+        Map<String, LppGroup> ingestGroups = ingesterGroupsWithNodes("g1", List.of("node1-ingester"));
+        Map<String, LppGroup> searchGroups = searcherGroupsWithNodes("g1", List.of("node1-searcher"));
+        Map<String, LppShardPlannedAllocation> allocations = roleAwareAllocations(
+                List.of("node1-ingester"), List.of("node1-searcher"), "g1");
+
+        Map<String, LppNodeGoalState> desired =
+                orchestrator.buildDesiredGoalStates(allocations, ingestGroups, searchGroups, "local");
+
+        assertThat(desired.get("node1-ingester").getRole()).isEqualTo("ingester");
+        assertThat(desired.get("node1-searcher").getRole()).isEqualTo("searcher");
+    }
+
+    // ---- helper builders ----
+
+    private Map<String, LppGroup> ingesterGroupsWithNodes(String groupId, List<String> nodeNames) {
+        LppGroup group = new LppGroup(groupId, "zone-a", "ingester");
+        for (String name : nodeNames) {
+            LppNode node = new LppNode(name, "odin-instance", groupId, "ingester", "zone-a");
+            node.setHealthState("GREEN");
+            group.addNode(node);
+        }
+        return Map.of(groupId, group);
+    }
+
+    private Map<String, LppGroup> searcherGroupsWithNodes(String groupId, List<String> nodeNames) {
+        LppGroup group = new LppGroup(groupId, "zone-a", "searcher");
+        for (String name : nodeNames) {
+            LppNode node = new LppNode(name, "odin-instance", groupId, "searcher", "zone-a");
+            node.setHealthState("GREEN");
+            group.addNode(node);
+        }
+        return Map.of(groupId, group);
+    }
+
+    /** PA with separate ingester and searcher node lists. */
+    private Map<String, LppShardPlannedAllocation> roleAwareAllocations(
+            List<String> ingesterNodes, List<String> searcherNodes, String groupId) {
+        LppShardEntry entry = new LppShardEntry("grocery", "local_index", "local_index.1", 0);
+        LppShardPlannedAllocation alloc = new LppShardPlannedAllocation(entry);
+        alloc.getAssignedIngesterNodeNames().addAll(ingesterNodes);
+        alloc.getAssignedSearcherNodeNames().addAll(searcherNodes);
+        alloc.getAssignedNodeNames().addAll(ingesterNodes);
+        alloc.getAssignedNodeNames().addAll(searcherNodes);
+        alloc.getAssignedGroupIds().add(groupId);
+        return Map.of(entry.getKey(), alloc);
+    }
+
+    private Map<String, LppShardPlannedAllocation> roleAwareIngestOnlyAllocations(
+            List<String> ingesterNodes, String groupId) {
+        LppShardEntry entry = new LppShardEntry("grocery", "local_index", "local_index.1", 0);
+        LppShardPlannedAllocation alloc = new LppShardPlannedAllocation(entry);
+        alloc.getAssignedIngesterNodeNames().addAll(ingesterNodes);
+        alloc.getAssignedNodeNames().addAll(ingesterNodes);
+        alloc.getAssignedGroupIds().add(groupId);
+        return Map.of(entry.getKey(), alloc);
+    }
+
+    private LppNodeActualState actualStateWith(String nodeName, String shardKey, String state) {
+        LppNodeActualState actual = new LppNodeActualState();
+        actual.setNodeName(nodeName);
+        LppShardActualState shardActual = new LppShardActualState();
+        shardActual.setShardKey(shardKey);
+        shardActual.setState(state);
+        actual.setShardStates(List.of(shardActual));
+        return actual;
+    }
+
     private Map<String, LppShardPlannedAllocation> singleShardAllocations(String nodeName, String groupId) {
         return singleShardAllocations(new String[]{nodeName}, groupId);
     }

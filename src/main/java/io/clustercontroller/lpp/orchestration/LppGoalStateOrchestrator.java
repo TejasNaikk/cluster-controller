@@ -50,14 +50,19 @@ public class LppGoalStateOrchestrator {
      * Compute desired goal states for all nodes and push updates to divergent nodes,
      * respecting the 20%-per-group rollout policy.
      *
-     * @param allocations current planned allocations (shardKey → allocation)
-     * @param groups      current group topology (groupId → LppGroup)
-     * @param region      region label written into goal states
+     * <p>Ingesters roll out freely at 20% per group. Searchers roll out at 20% per group
+     * but only after their ingester peer has the shard ACTIVE in its actual state.
+     *
+     * @param allocations  current planned allocations (shardKey → allocation)
+     * @param ingestGroups current ingester group topology (groupId → LppGroup)
+     * @param searchGroups current searcher group topology (groupId → LppGroup)
+     * @param region       region label written into goal states
      * @return list of node names updated this tick (empty = fully converged)
      */
     public List<String> orchestrate(
             Map<String, LppShardPlannedAllocation> allocations,
-            Map<String, LppGroup> groups,
+            Map<String, LppGroup> ingestGroups,
+            Map<String, LppGroup> searchGroups,
             String region) {
 
         if (allocations.isEmpty()) {
@@ -65,12 +70,13 @@ public class LppGoalStateOrchestrator {
             return List.of();
         }
 
-        Map<String, LppNodeGoalState> desired = buildDesiredGoalStates(allocations, groups, region);
+        // Combined view of all live nodes for orphan detection and rollout cap
+        Map<String, LppGroup> allGroups = new LinkedHashMap<>(ingestGroups);
+        allGroups.putAll(searchGroups);
 
-        // Clean up goal states for nodes no longer in the desired set (dead nodes).
-        // A node is dead if it no longer appears in any live group in the current topology.
-        // We own the goal-state namespace — orphaned keys must be removed so dead nodes
-        // leave no traces in etcd.
+        Map<String, LppNodeGoalState> desired = buildDesiredGoalStates(allocations, ingestGroups, searchGroups, region);
+
+        // Clean up orphaned goal states for nodes no longer in any live group
         Map<String, LppNodeGoalState> allExistingGoalStates = metadataStore.getAllNodeGoalStates();
         for (String nodeName : allExistingGoalStates.keySet()) {
             if (!desired.containsKey(nodeName)) {
@@ -83,9 +89,10 @@ public class LppGoalStateOrchestrator {
             }
         }
 
-        // Find all divergent nodes grouped by their replica group.
-        // We need the groupId per node to apply the per-group rollout cap.
-        Map<String, String> nodeToGroup = buildNodeToGroupMap(groups);
+        // Build node → groupId reverse map across both pools
+        Map<String, String> nodeToGroup = buildNodeToGroupMap(allGroups);
+        // Build node → role map
+        Map<String, String> nodeRoles = buildNodeRoleMap(ingestGroups, searchGroups);
 
         // Collect divergent nodes per group
         Map<String, List<String>> divergentByGroup = new LinkedHashMap<>();
@@ -111,15 +118,14 @@ public class LppGoalStateOrchestrator {
             return List.of();
         }
 
-        // For each group, push to at most 20% of its divergent nodes
         List<String> updated = new ArrayList<>();
 
         for (Map.Entry<String, List<String>> entry : divergentByGroup.entrySet()) {
             String groupId = entry.getKey();
             List<String> divergentNodes = entry.getValue();
 
-            int groupSize = groups.containsKey(groupId)
-                    ? groups.get(groupId).getNodes().size()
+            int groupSize = allGroups.containsKey(groupId)
+                    ? allGroups.get(groupId).getNodes().size()
                     : divergentNodes.size();
 
             int rolloutCap = Math.max(1, (int) Math.ceil(groupSize * ROLLOUT_FRACTION));
@@ -129,6 +135,19 @@ public class LppGoalStateOrchestrator {
                     groupId, divergentNodes.size(), batch.size(), groupSize);
 
             for (String nodeName : batch) {
+                String role = nodeRoles.getOrDefault(nodeName, "");
+
+                // Searcher dependency gate: the ingester peer must have all assigned shards ACTIVE
+                if ("searcher".equalsIgnoreCase(role)) {
+                    LppNodeGoalState desiredState = desired.get(nodeName);
+                    String ingesterPeer = nodeName.replace("-searcher", "-ingester");
+                    if (!isIngesterPeerReady(ingesterPeer, desiredState.getShards())) {
+                        log.info("LPP orchestrator: deferring searcher {} — ingester peer {} not yet ACTIVE for all assigned shards",
+                                nodeName, ingesterPeer);
+                        continue;
+                    }
+                }
+
                 LppNodeGoalState desiredState = desired.get(nodeName);
                 desiredState.bumpVersion();
 
@@ -148,23 +167,29 @@ public class LppGoalStateOrchestrator {
         return updated;
     }
 
-    /**
-     * Invert the allocation map to produce a per-node goal state.
-     *
-     * <p>For every shard in every allocation, all nodes in the allocated groups
-     * receive that shard. Nodes within the same group end up with identical shard
-     * lists (they are replicas).
-     */
-    Map<String, LppNodeGoalState> buildDesiredGoalStates(
+    // Legacy overload — kept for backward compatibility. Treats all nodes as ingesters.
+    @Deprecated
+    public List<String> orchestrate(
             Map<String, LppShardPlannedAllocation> allocations,
             Map<String, LppGroup> groups,
             String region) {
+        return orchestrate(allocations, groups, Map.of(), region);
+    }
 
-        // nodeName → role (from its group). Only live nodes appear here — dead nodes
-        // removed from Grail won't be in the group topology, so they are excluded.
-        Map<String, String> nodeRoles = new HashMap<>();
-        groups.values().forEach(g ->
-                g.getNodes().forEach(n -> nodeRoles.put(n.getNodeName(), g.getRole())));
+    /**
+     * Invert the allocation map to produce a per-node goal state.
+     *
+     * <p>Uses {@code assignedIngesterNodeNames} and {@code assignedSearcherNodeNames} from each
+     * allocation to build role-correct goal states. Falls back to {@code assignedNodeNames} for
+     * PAs that pre-date the role split.
+     */
+    Map<String, LppNodeGoalState> buildDesiredGoalStates(
+            Map<String, LppShardPlannedAllocation> allocations,
+            Map<String, LppGroup> ingestGroups,
+            Map<String, LppGroup> searchGroups,
+            String region) {
+
+        Map<String, String> nodeRoles = buildNodeRoleMap(ingestGroups, searchGroups);
 
         Map<String, LppNodeGoalState> goalStates = new LinkedHashMap<>();
 
@@ -175,23 +200,40 @@ public class LppGoalStateOrchestrator {
                     allocation.getFullIndexName(),
                     allocation.getShardId());
 
-            for (String nodeName : allocation.getAssignedNodeNames()) {
-                // Skip nodes not present in the current live topology — they are stale
-                // remnants in the PA from when they were alive. Pushing goal-states to them
-                // creates orphaned keys since the node no longer has an actual-state.
+            // Use role-specific node lists; fall back to combined list for legacy PAs
+            List<String> ingesterNodes = allocation.getAssignedIngesterNodeNames().isEmpty()
+                    ? allocation.getAssignedNodeNames()
+                    : allocation.getAssignedIngesterNodeNames();
+            List<String> searcherNodes = allocation.getAssignedSearcherNodeNames();
+
+            for (String nodeName : ingesterNodes) {
                 if (!nodeRoles.containsKey(nodeName)) {
-                    log.debug("LPP orchestrator: skipping dead node {} (not in current group topology)", nodeName);
+                    log.debug("LPP orchestrator: skipping dead ingester node {} (not in current topology)", nodeName);
                     continue;
                 }
-                String role = nodeRoles.get(nodeName);
-                LppNodeGoalState gs = goalStates.computeIfAbsent(
-                        nodeName,
-                        n -> new LppNodeGoalState(n, role, region));
-                gs.addShard(shardEntry);
+                goalStates.computeIfAbsent(nodeName, n -> new LppNodeGoalState(n, "ingester", region))
+                        .addShard(shardEntry);
+            }
+
+            for (String nodeName : searcherNodes) {
+                if (!nodeRoles.containsKey(nodeName)) {
+                    log.debug("LPP orchestrator: skipping dead searcher node {} (not in current topology)", nodeName);
+                    continue;
+                }
+                goalStates.computeIfAbsent(nodeName, n -> new LppNodeGoalState(n, "searcher", region))
+                        .addShard(shardEntry);
             }
         }
 
         return goalStates;
+    }
+
+    // Legacy overload kept for tests. Treats all nodes as ingesters (no searcher dependency).
+    Map<String, LppNodeGoalState> buildDesiredGoalStates(
+            Map<String, LppShardPlannedAllocation> allocations,
+            Map<String, LppGroup> groups,
+            String region) {
+        return buildDesiredGoalStates(allocations, groups, Map.of(), region);
     }
 
     /**
@@ -247,5 +289,42 @@ public class LppGoalStateOrchestrator {
         groups.values().forEach(g ->
                 g.getNodes().forEach(n -> map.put(n.getNodeName(), g.getGroupId())));
         return map;
+    }
+
+    /** Build a reverse map: nodeName → role ("ingester" or "searcher"). */
+    private Map<String, String> buildNodeRoleMap(
+            Map<String, LppGroup> ingestGroups,
+            Map<String, LppGroup> searchGroups) {
+        Map<String, String> map = new HashMap<>();
+        ingestGroups.values().forEach(g ->
+                g.getNodes().forEach(n -> map.put(n.getNodeName(), "ingester")));
+        searchGroups.values().forEach(g ->
+                g.getNodes().forEach(n -> map.put(n.getNodeName(), "searcher")));
+        return map;
+    }
+
+    /**
+     * Returns true when the ingester peer node has ALL the given shards ACTIVE in its
+     * actual state. Used to gate searcher goal-state pushes.
+     */
+    private boolean isIngesterPeerReady(String ingesterNode, List<LppShardEntry> requiredShards) {
+        Optional<LppNodeActualState> actualOpt = metadataStore.getNodeActualState(ingesterNode);
+        if (actualOpt.isEmpty()) {
+            log.debug("LPP orchestrator: ingester peer {} has no actual state", ingesterNode);
+            return false;
+        }
+
+        Set<String> activeShardKeys = actualOpt.get().getShardStates().stream()
+                .filter(LppShardActualState::isActive)
+                .map(LppShardActualState::getShardKey)
+                .collect(Collectors.toSet());
+
+        for (LppShardEntry shard : requiredShards) {
+            if (!activeShardKeys.contains(shard.getKey())) {
+                log.debug("LPP orchestrator: ingester peer {} shard {} not yet ACTIVE", ingesterNode, shard.getKey());
+                return false;
+            }
+        }
+        return true;
     }
 }

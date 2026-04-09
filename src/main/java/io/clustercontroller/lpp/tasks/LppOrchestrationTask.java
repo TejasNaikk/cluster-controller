@@ -25,7 +25,8 @@ public class LppOrchestrationTask {
             // from previously registered indices get cleaned up.
             List<String> updated = ctx.getOrchestrator().orchestrate(
                     ctx.getCurrentAllocations(),
-                    ctx.getCurrentGroups(),
+                    ctx.getCurrentIngestGroups(),
+                    ctx.getCurrentSearchGroups(),
                     ctx.getRegion());
 
             if (!updated.isEmpty()) {

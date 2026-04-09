@@ -62,6 +62,14 @@ public class LppShardPlannedAllocation {
     @JsonProperty("assigned_node_names")
     private List<String> assignedNodeNames = new ArrayList<>();
 
+    /** Ingester node names assigned to serve this shard (ingest path). */
+    @JsonProperty("assigned_ingester_node_names")
+    private List<String> assignedIngesterNodeNames = new ArrayList<>();
+
+    /** Searcher node names assigned to serve this shard (search path). */
+    @JsonProperty("assigned_searcher_node_names")
+    private List<String> assignedSearcherNodeNames = new ArrayList<>();
+
     /** Groups responsible for the ingest/write path. */
     @JsonProperty("ingest_group_ids")
     private List<String> ingestGroupIds = new ArrayList<>();
@@ -102,7 +110,7 @@ public class LppShardPlannedAllocation {
 
     /** Add a group to the ingest path. Also registers it in assignedGroupIds/Nodes. */
     public void addIngestGroup(LppGroup group) {
-        addGroupInternal(group);
+        addGroupInternal(group, assignedIngesterNodeNames);
         if (!ingestGroupIds.contains(group.getGroupId())) {
             ingestGroupIds.add(group.getGroupId());
         }
@@ -110,7 +118,7 @@ public class LppShardPlannedAllocation {
 
     /** Add a group to the search path. Also registers it in assignedGroupIds/Nodes. */
     public void addSearchGroup(LppGroup group) {
-        addGroupInternal(group);
+        addGroupInternal(group, assignedSearcherNodeNames);
         if (!searchGroupIds.contains(group.getGroupId())) {
             searchGroupIds.add(group.getGroupId());
         }
@@ -125,13 +133,16 @@ public class LppShardPlannedAllocation {
         addSearchGroup(group);
     }
 
-    private void addGroupInternal(LppGroup group) {
+    private void addGroupInternal(LppGroup group, List<String> roleSpecificNodes) {
         if (!assignedGroupIds.contains(group.getGroupId())) {
             assignedGroupIds.add(group.getGroupId());
         }
         group.getNodes().forEach(n -> {
             if (!assignedNodeNames.contains(n.getNodeName())) {
                 assignedNodeNames.add(n.getNodeName());
+            }
+            if (!roleSpecificNodes.contains(n.getNodeName())) {
+                roleSpecificNodes.add(n.getNodeName());
             }
         });
     }

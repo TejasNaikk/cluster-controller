@@ -22,7 +22,8 @@ import java.util.concurrent.TimeUnit;
  * <p>Each iteration:
  * <ol>
  *   <li>Checks leader election — non-leaders skip the loop entirely.</li>
- *   <li>Discovery   — pull topology from Grail, prune stale nodes</li>
+ *   <li>Discovery   — read actual-state heartbeats from etcd, prune stale nodes, build
+ *       role-specific group topology (ingestGroups + searchGroups)</li>
  *   <li>Allocation  — bin-pack shards onto groups (two-pass: ingest then search)</li>
  *   <li>Orchestration — push goal state to divergent nodes (20% rollout per group)</li>
  *   <li>Shadow simulation — if enabled, write fake ACTIVE actual states so the
@@ -78,7 +79,7 @@ public class LppControllerRunner {
 
             log.info("LPP loop start [leader]");
 
-            String discovery = new LppDiscoveryTask(ctx).execute();
+            String discovery = new LppActualStateDiscoveryTask(ctx).execute();
             log.info("LPP discovery → {}", discovery);
 
             String allocation = new LppAllocationTask(ctx).execute();

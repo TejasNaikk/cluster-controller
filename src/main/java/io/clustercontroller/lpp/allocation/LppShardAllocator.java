@@ -57,59 +57,51 @@ public class LppShardAllocator {
     /**
      * Run a full allocation pass over all registered indices given the current group topology.
      *
-     * <h3>Hybrid mode (default)</h3>
-     * <p>When all eligible groups can serve both ingest and search (the current default),
-     * a single allocation pass is run per shard. The number of groups selected equals
-     * {@code numIngestGroups} (the scale factor). Each selected group is registered as
-     * both ingest and search via {@link LppShardPlannedAllocation#addGroup}, so
-     * {@code ingestGroupIds == searchGroupIds} always. This ensures scale=1 means exactly
-     * 1 group per shard, scale=2 means exactly 2 groups, etc.
+     * <p>Group selection runs once on {@code ingestGroups} per shard. The same selected
+     * group IDs are then validated against {@code searchGroups}: if any selected group ID
+     * is missing from the searcher pool the shard is skipped with an error log (misconfiguration).
      *
-     * <h3>Reader-writer separation mode</h3>
-     * <p>When dedicated ingest-only or search-only groups exist (the eligible pools differ),
-     * two independent passes run: one to pick {@code numIngestGroups} from the ingest pool
-     * and one to pick {@code numSearchGroups} from the search pool. Groups and nodes are
-     * unioned into {@code assignedGroupIds} / {@code assignedNodeNames} for orchestration.
+     * <p>Load counters are shared across all indices in a single run so bin-packing works
+     * globally across the full shard set.
      *
-     * <p>Load counters are shared across all indices in a single run so the strategy
-     * can bin-pack across the entire shard set at once.
-     *
-     * @param groups   current group topology from discovery (groupId → LppGroup)
-     * @param indices  index definitions from etcd
+     * @param ingestGroups current ingester group topology (groupId → LppGroup of ingester nodes)
+     * @param searchGroups current searcher group topology (groupId → LppGroup of searcher nodes)
+     * @param indices      index definitions from etcd
      * @return map of shardKey → planned allocation for all processed shards
      */
     public Map<String, LppShardPlannedAllocation> allocate(
-            Map<String, LppGroup> groups,
+            Map<String, LppGroup> ingestGroups,
+            Map<String, LppGroup> searchGroups,
             List<LppIndexDefinition> indices) {
+
+        // Combined group map for legacy reconciliation (group presence check uses union)
+        Map<String, LppGroup> allGroups = new LinkedHashMap<>(ingestGroups);
+        allGroups.putAll(searchGroups);
 
         Map<String, LppShardPlannedAllocation> result = new LinkedHashMap<>();
 
-        List<LppGroup> eligibleIngest = selectEligibleGroups(groups, LppGroup.GroupType.INGEST);
-        List<LppGroup> eligibleSearch = selectEligibleGroups(groups, LppGroup.GroupType.SEARCH);
+        List<LppGroup> eligibleIngest = selectEligibleGroups(ingestGroups, LppGroup.GroupType.INGEST);
 
-        log.info("LPP planner: mode={}, ingest-pool={} groups, search-pool={} groups",
-                hybrid ? "HYBRID" : "READER-WRITER", eligibleIngest.size(), eligibleSearch.size());
+        log.info("LPP planner: role-aware mode, ingest-pool={} groups, search-pool={} groups",
+                eligibleIngest.size(), searchGroups.size());
 
-        // Shared load counter across all indices so bin-packing works globally.
-        // In hybrid mode one counter suffices; in reader-writer mode keep separate ones.
+        // Shared load counter across all indices for global bin-packing
         Map<String, Integer> ingestCounts = new HashMap<>();
-        Map<String, Integer> searchCounts = new HashMap<>();
 
         for (LppIndexDefinition index : indices) {
-            log.info("LPP planner: index {} — {} shards, mode={}, scale_per_shard={}",
+            log.info("LPP planner: index {} — {} shards, scale_per_shard={}",
                     index.getKey(), index.getNumShards(),
-                    hybrid ? "HYBRID" : "READER-WRITER",
                     index.getScalePerShard().isEmpty()
                             ? "uniform(" + index.getNumIngestGroups() + ")"
                             : index.getScalePerShard());
 
             if (eligibleIngest.isEmpty()) {
-                log.warn("LPP planner: no eligible groups for index {}, skipping", index.getKey());
+                log.warn("LPP planner: no eligible ingester groups for index {}, skipping", index.getKey());
                 continue;
             }
 
             for (int shardId = 0; shardId < index.getNumShards(); shardId++) {
-                int scale = index.getShardScale(shardId); // per-shard scale from index conf
+                int scale = index.getShardScale(shardId);
                 LppShardEntry entry = new LppShardEntry(
                         index.getCollection(),
                         index.getIndexName(),
@@ -118,61 +110,54 @@ public class LppShardAllocator {
                 String shardKey = entry.getKey();
 
                 // Stable allocation check — reuse existing etcd allocation before running the
-                // strategy. This is critical: without this, random strategies produce a new
-                // assignment every tick, making convergence impossible.
-                //
-                // We do reconcile the existing PA against the live topology:
-                //  - Dead groups (no longer in Grail) are pruned from the PA.
-                //  - assignedNodeNames is rebuilt from the live group's current node list,
-                //    which also picks up new replicas that joined since initial allocation.
-                //  - If after pruning the group count drops below required scale,
-                //    we fall through to re-allocate.
+                // strategy. Reconciles existing PA against live topology (prunes dead groups,
+                // rebuilds node lists).
                 Optional<LppShardPlannedAllocation> existing =
                         metadataStore.getShardPlannedAllocation(shardKey);
                 if (existing.isPresent()) {
                     LppShardPlannedAllocation reconciled =
-                            reconcileAllocation(existing.get(), groups, scale, shardKey);
+                            reconcileAllocation(existing.get(), ingestGroups, searchGroups, scale, shardKey);
                     if (reconciled != null) {
                         result.put(shardKey, reconciled);
                         continue;
                     }
-                    // reconciled == null means group count fell below scale — re-allocate below
                     log.info("LPP planner: shard {} under-allocated after pruning dead groups, re-allocating", shardKey);
                 }
 
-                // No existing allocation — run the strategy to pick initial placement.
+                // No stable allocation — run strategy on ingester pool to select group IDs
+                List<LppGroup> selectedIngestGroups =
+                        strategy.selectGroups(eligibleIngest, scale, ingestCounts);
+                if (selectedIngestGroups.isEmpty()) {
+                    log.warn("LPP planner: strategy returned no ingester groups for shard {}, skipping", shardKey);
+                    continue;
+                }
+
+                // Validate that every selected group ID exists in the searcher pool
+                boolean searcherMismatch = false;
+                for (LppGroup ingestGroup : selectedIngestGroups) {
+                    if (!searchGroups.containsKey(ingestGroup.getGroupId())) {
+                        log.error("LPP planner: shard {} — selected ingester group '{}' has no corresponding " +
+                                "searcher group; skipping shard (misconfiguration)",
+                                shardKey, ingestGroup.getGroupId());
+                        searcherMismatch = true;
+                        break;
+                    }
+                }
+                if (searcherMismatch) continue;
+
                 LppShardPlannedAllocation allocation = new LppShardPlannedAllocation(entry);
 
-                if (hybrid) {
-                    // Single pass: scale groups handle both ingest and search.
-                    List<LppGroup> selected =
-                            strategy.selectGroups(eligibleIngest, scale, ingestCounts);
-                    if (selected.isEmpty()) {
-                        log.warn("LPP planner: strategy returned no groups for shard {}, skipping", shardKey);
-                        continue;
-                    }
-                    for (LppGroup g : selected) {
-                        allocation.addGroup(g); // registers in both ingestGroupIds and searchGroupIds
-                    }
-                    log.info("LPP planner: shard {} → hybrid groups:{} scale={} (nodes:{})",
-                            shardKey, allocation.getIngestGroupIds(), selected.size(),
-                            allocation.getAssignedNodeNames());
-                } else {
-                    // Two passes: dedicated ingest and search pools.
-                    List<LppGroup> ingestGroups =
-                            strategy.selectGroups(eligibleIngest, index.getNumIngestGroups(), ingestCounts);
-                    List<LppGroup> searchGroups =
-                            strategy.selectGroups(eligibleSearch, index.getNumSearchGroups(), searchCounts);
-                    if (ingestGroups.isEmpty()) {
-                        log.warn("LPP planner: no ingest groups for shard {}, skipping", shardKey);
-                        continue;
-                    }
-                    for (LppGroup g : ingestGroups) allocation.addIngestGroup(g);
-                    for (LppGroup g : searchGroups) allocation.addSearchGroup(g);
-                    log.info("LPP planner: shard {} → ingest:{} search:{} (nodes:{})",
-                            shardKey, allocation.getIngestGroupIds(), allocation.getSearchGroupIds(),
-                            allocation.getAssignedNodeNames());
+                for (LppGroup ingestGroup : selectedIngestGroups) {
+                    allocation.addIngestGroup(ingestGroup);
+                    LppGroup searchGroup = searchGroups.get(ingestGroup.getGroupId());
+                    allocation.addSearchGroup(searchGroup);
                 }
+
+                log.info("LPP planner: shard {} → groups:{} ingesters:{} searchers:{}",
+                        shardKey,
+                        allocation.getAssignedGroupIds(),
+                        allocation.getAssignedIngesterNodeNames(),
+                        allocation.getAssignedSearcherNodeNames());
 
                 allocation.setLastUpdatedMs(System.currentTimeMillis());
                 metadataStore.putShardPlannedAllocation(allocation);
@@ -181,6 +166,14 @@ public class LppShardAllocator {
         }
 
         return result;
+    }
+
+    // Legacy single-map overload — kept for backward compatibility with tests/callers
+    @Deprecated
+    public Map<String, LppShardPlannedAllocation> allocate(
+            Map<String, LppGroup> groups,
+            List<LppIndexDefinition> indices) {
+        return allocate(groups, groups, indices);
     }
 
     /**
@@ -203,9 +196,9 @@ public class LppShardAllocator {
      *
      * <p>For each group ID still in the PA:
      * <ul>
-     *   <li>If the group is still alive in Grail, rebuild its node list from the current
-     *       topology (picks up new replicas, drops dead ones).</li>
-     *   <li>If the group is gone from Grail, drop it from ingest/search/assigned lists.</li>
+     *   <li>If the group is still alive, rebuild its ingester and searcher node lists from
+     *       the current topology (picks up new replicas, drops dead ones).</li>
+     *   <li>If the group is gone from both pools, drop it from all lists.</li>
      * </ul>
      *
      * <p>Returns the reconciled PA (persisting to etcd if changed), or {@code null} if the
@@ -213,49 +206,63 @@ public class LppShardAllocator {
      */
     private LppShardPlannedAllocation reconcileAllocation(
             LppShardPlannedAllocation existing,
-            Map<String, LppGroup> liveGroups,
+            Map<String, LppGroup> ingestGroups,
+            Map<String, LppGroup> searchGroups,
             int requiredScale,
             String shardKey) {
 
-        List<String> liveIngest  = new ArrayList<>();
-        List<String> liveSearch  = new ArrayList<>();
+        List<String> liveIngest   = new ArrayList<>();
+        List<String> liveSearch   = new ArrayList<>();
         List<String> liveAssigned = new ArrayList<>();
-        List<String> liveNodes   = new ArrayList<>();
+        List<String> liveIngesterNodes = new ArrayList<>();
+        List<String> liveSearcherNodes = new ArrayList<>();
+        List<String> liveAllNodes = new ArrayList<>();
 
         for (String gid : existing.getAssignedGroupIds()) {
-            LppGroup liveGroup = liveGroups.get(gid);
-            if (liveGroup == null) {
+            LppGroup ingestGroup = ingestGroups.get(gid);
+            LppGroup searchGroup = searchGroups.get(gid);
+
+            if (ingestGroup == null && searchGroup == null) {
                 log.info("LPP planner: shard {} — group {} no longer in topology, pruning from PA",
                         shardKey, gid);
                 continue;
             }
+
             liveAssigned.add(gid);
             if (existing.getIngestGroupIds().contains(gid)) liveIngest.add(gid);
             if (existing.getSearchGroupIds().contains(gid)) liveSearch.add(gid);
-            // Rebuild node list from live topology (picks up new replicas, drops dead ones)
-            liveGroup.getNodes().forEach(n -> {
-                if (!liveNodes.contains(n.getNodeName())) {
-                    liveNodes.add(n.getNodeName());
-                }
-            });
+
+            if (ingestGroup != null) {
+                ingestGroup.getNodes().forEach(n -> {
+                    if (!liveIngesterNodes.contains(n.getNodeName())) liveIngesterNodes.add(n.getNodeName());
+                    if (!liveAllNodes.contains(n.getNodeName())) liveAllNodes.add(n.getNodeName());
+                });
+            }
+            if (searchGroup != null) {
+                searchGroup.getNodes().forEach(n -> {
+                    if (!liveSearcherNodes.contains(n.getNodeName())) liveSearcherNodes.add(n.getNodeName());
+                    if (!liveAllNodes.contains(n.getNodeName())) liveAllNodes.add(n.getNodeName());
+                });
+            }
         }
 
-        // If surviving groups are below required scale, signal for re-allocation
         if (liveAssigned.size() < requiredScale) {
             return null;
         }
 
         boolean changed = !liveAssigned.equals(existing.getAssignedGroupIds())
-                || !liveNodes.equals(existing.getAssignedNodeNames());
+                || !liveAllNodes.equals(existing.getAssignedNodeNames());
 
         existing.setAssignedGroupIds(liveAssigned);
         existing.setIngestGroupIds(liveIngest);
         existing.setSearchGroupIds(liveSearch);
-        existing.setAssignedNodeNames(liveNodes);
+        existing.setAssignedNodeNames(liveAllNodes);
+        existing.setAssignedIngesterNodeNames(liveIngesterNodes);
+        existing.setAssignedSearcherNodeNames(liveSearcherNodes);
 
         if (changed) {
-            log.info("LPP planner: shard {} — PA reconciled ({} groups, {} nodes)",
-                    shardKey, liveAssigned.size(), liveNodes.size());
+            log.info("LPP planner: shard {} — PA reconciled ({} groups, {} ingesters, {} searchers)",
+                    shardKey, liveAssigned.size(), liveIngesterNodes.size(), liveSearcherNodes.size());
             existing.setLastUpdatedMs(System.currentTimeMillis());
             metadataStore.putShardPlannedAllocation(existing);
         } else {

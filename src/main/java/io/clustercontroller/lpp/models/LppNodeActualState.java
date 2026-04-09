@@ -38,6 +38,13 @@ public class LppNodeActualState {
     @JsonProperty("grail_shard_id")
     private String grailShardId;
 
+    /**
+     * Group ID from node self-report. Primary group key — nodes with the same groupId
+     * form one replica group. Replaces grailShardId for self-reporting nodes.
+     */
+    @JsonProperty("group_id")
+    private String groupId;
+
     @JsonProperty("role")
     private String role;
 

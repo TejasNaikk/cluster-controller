@@ -25,8 +25,8 @@ public class LppAllocationTask {
 
     public String execute() {
         try {
-            if (ctx.getCurrentGroups().isEmpty()) {
-                log.warn("LPP allocation task: no groups available, skipping");
+            if (ctx.getCurrentIngestGroups().isEmpty()) {
+                log.warn("LPP allocation task: no ingester groups available, skipping");
                 return "SKIPPED";
             }
 
@@ -38,7 +38,7 @@ public class LppAllocationTask {
             }
 
             Map<String, LppShardPlannedAllocation> allocations =
-                    ctx.getAllocator().allocate(ctx.getCurrentGroups(), indices);
+                    ctx.getAllocator().allocate(ctx.getCurrentIngestGroups(), ctx.getCurrentSearchGroups(), indices);
             ctx.setCurrentAllocations(allocations);
 
             log.info("LPP allocation task complete: {} shard allocations", allocations.size());

@@ -23,7 +23,9 @@ public class LppDiscoveryTask {
     public String execute() {
         try {
             Map<String, LppGroup> groups = ctx.getDiscovery().discover();
-            ctx.setCurrentGroups(groups);
+            // Legacy: populate both ingest and search groups with the same unified map
+            ctx.setCurrentIngestGroups(groups);
+            ctx.setCurrentSearchGroups(groups);
             log.info("LPP discovery task complete: {} groups", groups.size());
             return "SUCCESS";
         } catch (Exception e) {

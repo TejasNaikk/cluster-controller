@@ -37,56 +37,38 @@ class LppTasksTest {
                 aggregator, metadataStore, "delivery-grocery", "local");
     }
 
-    // ---- Discovery task ----
-
-    @Test
-    void discoveryTaskSucceeds() {
-        when(discovery.discover()).thenReturn(Map.of("g1", new LppGroup("g1", "z", "INGEST")));
-
-        LppDiscoveryTask task = new LppDiscoveryTask(ctx);
-        String result = task.execute();
-
-        assertThat(result).isEqualTo("SUCCESS");
-        assertThat(ctx.getCurrentGroups()).containsKey("g1");
-    }
-
-    @Test
-    void discoveryTaskReturnsFailed() {
-        when(discovery.discover()).thenThrow(new RuntimeException("Grail down"));
-
-        String result = new LppDiscoveryTask(ctx).execute();
-        assertThat(result).isEqualTo("FAILED");
-    }
-
     // ---- Allocation task ----
 
     @Test
-    void allocationTaskSkipsWhenNoGroups() {
-        // groups are empty by default in ctx
+    void allocationTaskSkipsWhenNoIngestGroups() {
+        // ingestGroups are empty by default in ctx
         String result = new LppAllocationTask(ctx).execute();
         assertThat(result).isEqualTo("SKIPPED");
-        verify(allocator, never()).allocate(any(), any());
+        verify(allocator, never()).allocate(any(), any(), any());
     }
 
     @Test
-    void allocationTaskSkipsWhenNoIndices() {
-        ctx.setCurrentGroups(Map.of("g1", new LppGroup("g1", "z", "INGEST")));
+    void allocationTaskSkipsAndClearsAllocationsWhenNoIndices() {
+        ctx.setCurrentIngestGroups(Map.of("g1", new LppGroup("g1", "z", "ingester")));
         when(metadataStore.getAllIndexDefinitions()).thenReturn(List.of());
 
         String result = new LppAllocationTask(ctx).execute();
+
         assertThat(result).isEqualTo("SKIPPED");
+        assertThat(ctx.getCurrentAllocations()).isEmpty();
     }
 
     @Test
     void allocationTaskSucceedsAndStoresAllocations() {
-        ctx.setCurrentGroups(Map.of("g1", new LppGroup("g1", "z", "INGEST")));
+        ctx.setCurrentIngestGroups(Map.of("g1", new LppGroup("g1", "z", "ingester")));
+        ctx.setCurrentSearchGroups(Map.of("g1", new LppGroup("g1", "z", "searcher")));
         when(metadataStore.getAllIndexDefinitions()).thenReturn(
                 List.of(new LppIndexDefinition("grocery", "idx", "idx.1", 2, 1)));
 
         LppShardPlannedAllocation a0 = allocationFor("grocery", "idx", 0);
         LppShardPlannedAllocation a1 = allocationFor("grocery", "idx", 1);
-        when(allocator.allocate(any(), any())).thenReturn(
-                Map.of("grocery.idx.0", a0, "grocery.idx.1", a1));
+        when(allocator.allocate(any(), any(), any())).thenReturn(
+                Map.of("grocery.idx.1.0", a0, "grocery.idx.1.1", a1));
 
         String result = new LppAllocationTask(ctx).execute();
 
@@ -97,16 +79,20 @@ class LppTasksTest {
     // ---- Orchestration task ----
 
     @Test
-    void orchestrationTaskSkipsWhenNoAllocations() {
+    void orchestrationTaskRunsEvenWithNoAllocations() {
+        // Orchestration must always run (so orphaned goal-states get cleaned up)
+        when(orchestrator.orchestrate(any(), any(), any(), any())).thenReturn(List.of());
+
         String result = new LppOrchestrationTask(ctx).execute();
-        assertThat(result).isEqualTo("SKIPPED");
-        verify(orchestrator, never()).orchestrate(any(), any(), any());
+
+        assertThat(result).isEqualTo("CONVERGED");
+        verify(orchestrator).orchestrate(any(), any(), any(), any());
     }
 
     @Test
     void orchestrationTaskReturnsConvergedWhenAllNodesInSync() {
         ctx.setCurrentAllocations(Map.of("k", allocationFor("grocery", "idx", 0)));
-        when(orchestrator.orchestrate(any(), any(), any())).thenReturn(List.of());
+        when(orchestrator.orchestrate(any(), any(), any(), any())).thenReturn(List.of());
 
         String result = new LppOrchestrationTask(ctx).execute();
         assertThat(result).isEqualTo("CONVERGED");
@@ -115,10 +101,27 @@ class LppTasksTest {
     @Test
     void orchestrationTaskReturnsSuccessWhenNodeUpdated() {
         ctx.setCurrentAllocations(Map.of("k", allocationFor("grocery", "idx", 0)));
-        when(orchestrator.orchestrate(any(), any(), any())).thenReturn(List.of("node-1"));
+        when(orchestrator.orchestrate(any(), any(), any(), any())).thenReturn(List.of("node-1"));
 
         String result = new LppOrchestrationTask(ctx).execute();
         assertThat(result).isEqualTo("SUCCESS");
+    }
+
+    @Test
+    void orchestrationTaskPassesBothGroupMapsToOrchestrator() {
+        Map<String, LppGroup> ingestGroups = Map.of("g1", new LppGroup("g1", "z", "ingester"));
+        Map<String, LppGroup> searchGroups = Map.of("g1", new LppGroup("g1", "z", "searcher"));
+        ctx.setCurrentIngestGroups(ingestGroups);
+        ctx.setCurrentSearchGroups(searchGroups);
+        when(orchestrator.orchestrate(any(), any(), any(), any())).thenReturn(List.of());
+
+        new LppOrchestrationTask(ctx).execute();
+
+        verify(orchestrator).orchestrate(
+                eq(ctx.getCurrentAllocations()),
+                eq(ingestGroups),
+                eq(searchGroups),
+                eq("local"));
     }
 
     // ---- State aggregation task ----

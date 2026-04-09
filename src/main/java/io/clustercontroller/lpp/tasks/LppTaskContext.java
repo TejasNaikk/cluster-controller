@@ -35,7 +35,8 @@ public class LppTaskContext {
     private final String region;
 
     // In-memory state shared across tasks within a single cycle
-    private volatile Map<String, LppGroup> currentGroups = Map.of();
+    private volatile Map<String, LppGroup> currentIngestGroups = Map.of();
+    private volatile Map<String, LppGroup> currentSearchGroups = Map.of();
     private volatile Map<String, LppShardPlannedAllocation> currentAllocations = Map.of();
 
     public LppTaskContext(
@@ -57,8 +58,12 @@ public class LppTaskContext {
         this.region = region;
     }
 
-    public void setCurrentGroups(Map<String, LppGroup> groups) {
-        this.currentGroups = Map.copyOf(groups);
+    public void setCurrentIngestGroups(Map<String, LppGroup> groups) {
+        this.currentIngestGroups = Map.copyOf(groups);
+    }
+
+    public void setCurrentSearchGroups(Map<String, LppGroup> groups) {
+        this.currentSearchGroups = Map.copyOf(groups);
     }
 
     public void setCurrentAllocations(Map<String, LppShardPlannedAllocation> allocations) {
